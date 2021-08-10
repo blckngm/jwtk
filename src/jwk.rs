@@ -38,7 +38,7 @@ pub struct Jwk {
 }
 
 impl Jwk {
-    pub fn to_verification_key(&self) -> Result<Box<dyn VerificationKey>> {
+    pub fn to_verification_key(&self) -> Result<Box<dyn VerificationKey + Send + Sync>> {
         // Check `use` and `key_ops`.
         if !matches!(self.use_.as_deref(), None | Some("sig")) {
             return Err(Error::UnsupportedOrInvalidKey);
@@ -97,11 +97,11 @@ impl JwkSet {
 
 /// Jwk set parsed and converted, ready to verify tokens.
 pub struct JwkSetVerifier {
-    keys: HashMap<String, Box<dyn VerificationKey>>,
+    keys: HashMap<String, Box<dyn VerificationKey + Send + Sync>>,
 }
 
 impl JwkSetVerifier {
-    pub fn find(&self, kid: &str) -> Option<&dyn VerificationKey> {
+    pub fn find(&self, kid: &str) -> Option<&(dyn VerificationKey + Send + Sync)> {
         if let Some(vk) = self.keys.get(kid) {
             Some(&**vk)
         } else {

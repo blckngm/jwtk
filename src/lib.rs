@@ -468,7 +468,7 @@ impl From<reqwest::Error> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Read an RSA/EC private key from PEM text representation.
-pub fn private_key_from_pem(pem: &[u8]) -> Result<Box<dyn SigningKey>> {
+pub fn private_key_from_pem(pem: &[u8]) -> Result<Box<dyn SigningKey + Send + Sync>> {
     let pk = PKey::private_key_from_pem(pem)?;
     if let Ok(rsa) = pk.rsa() {
         if rsa.check_key()? {
@@ -485,7 +485,7 @@ pub fn private_key_from_pem(pem: &[u8]) -> Result<Box<dyn SigningKey>> {
 }
 
 /// Read an RSA/EC public key from PEM text representation.
-pub fn public_key_from_pem(pem: &[u8]) -> Result<Box<dyn VerificationKey>> {
+pub fn public_key_from_pem(pem: &[u8]) -> Result<Box<dyn VerificationKey + Send + Sync>> {
     let pk = PKey::public_key_from_pem(pem)?;
     if pk.rsa().is_ok() {
         return Ok(Box::new(RS256PublicKey(pk)));
