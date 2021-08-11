@@ -34,7 +34,7 @@ use std::{
 use ecdsa::{EcdsaPrivateKey, EcdsaPublicKey};
 use jwk::Jwk;
 use openssl::{error::ErrorStack, pkey::PKey};
-use rsa::{RsaAlgorithm, RsaAnyPublicKey, RsaPrivateKey};
+use rsa::{RsaAlgorithm, RsaPrivateKey, RsaPublicKey};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 use smallvec::SmallVec;
@@ -519,9 +519,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Read an RSA/EC private key from PEM text representation.
 ///
-/// For an EC public key, algorithm is deduced from the curve, e.g. P-256 -> ES256.
+/// For an EC private key, algorithm is deduced from the curve, e.g. P-256 -> ES256.
 ///
-/// For an RSA public key, `if_rsa_algorithm` is used.
+/// For an RSA private key, `if_rsa_algorithm` is used.
 pub fn private_key_from_pem(
     pem: &[u8],
     if_rsa_algorithm: RsaAlgorithm,
@@ -546,7 +546,7 @@ pub fn private_key_from_pem(
 pub fn public_key_from_pem(pem: &[u8]) -> Result<Box<dyn VerificationKey + Send + Sync>> {
     let pk = PKey::public_key_from_pem(pem)?;
     if pk.rsa().is_ok() {
-        let k = RsaAnyPublicKey::from_pkey(pk);
+        let k = RsaPublicKey::from_pkey(pk, None)?;
         return Ok(Box::new(k));
     }
     if pk.ec_key().is_ok() {
