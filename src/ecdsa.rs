@@ -76,7 +76,8 @@ impl EcdsaAlgorithm {
         })
     }
 
-    fn sig_len(self) -> usize {
+    // Signature length. Also == 2 * r == 2 * s == 2 * x == 2 * y.
+    fn len(self) -> usize {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => 64,
@@ -129,7 +130,7 @@ impl EcdsaPrivateKey {
         Ok(self.private_key.public_key_to_pem()?)
     }
 
-    /// (x, y)
+    /// Public key X Y coordinates. Always padded to the full size.
     pub fn coordinates(&self) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut ctx = BigNumContext::new()?;
         let mut x = BigNum::new()?;
@@ -137,8 +138,32 @@ impl EcdsaPrivateKey {
         let ec = self.private_key.ec_key()?;
         ec.public_key()
             .affine_coordinates(ec.group(), &mut x, &mut y, &mut ctx)?;
-        Ok((x.to_vec(), y.to_vec()))
+        let (mut x, mut y) = (x.to_vec(), y.to_vec());
+        pad_left(&mut x, self.algorithm.len() / 2);
+        pad_left(&mut y, self.algorithm.len() / 2);
+        Ok((x, y))
     }
+}
+
+fn pad_left(v: &mut Vec<u8>, len: usize) {
+    debug_assert!(v.len() <= len);
+    if v.len() == len {
+        return;
+    }
+    let old_len = v.len();
+    v.resize(len, 0);
+    v.copy_within(0..old_len, len - old_len);
+    v[..(len - old_len)].fill(0);
+}
+
+#[cfg(test)]
+#[test]
+fn test_pad_left() {
+    let mut v = vec![5, 6, 7];
+    pad_left(&mut v, 3);
+    assert_eq!(v, [5, 6, 7]);
+    pad_left(&mut v, 8);
+    assert_eq!(v, [0, 0, 0, 0, 0, 5, 6, 7]);
 }
 
 #[derive(Debug)]
@@ -173,7 +198,7 @@ impl EcdsaPublicKey {
         Ok(self.public_key.public_key_to_pem()?)
     }
 
-    /// (x, y)
+    /// X Y coordinates. Always padded to the full size.
     pub fn coordinates(&self) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut ctx = BigNumContext::new()?;
         let mut x = BigNum::new()?;
@@ -181,7 +206,10 @@ impl EcdsaPublicKey {
         let ec = self.public_key.ec_key()?;
         ec.public_key()
             .affine_coordinates(ec.group(), &mut x, &mut y, &mut ctx)?;
-        Ok((x.to_vec(), y.to_vec()))
+        let (mut x, mut y) = (x.to_vec(), y.to_vec());
+        pad_left(&mut x, self.algorithm.len() / 2);
+        pad_left(&mut y, self.algorithm.len() / 2);
+        Ok((x, y))
     }
 
     pub fn from_coordinates(x: &[u8], y: &[u8], algorithm: EcdsaAlgorithm) -> Result<Self> {
@@ -207,12 +235,12 @@ impl SigningKey for EcdsaPrivateKey {
         // Convert from DER to fixed length.
         let sig = EcdsaSig::from_der(&sig_der)?;
 
-        let mut out = smallvec::smallvec![0u8; self.algorithm.sig_len()];
+        let mut out = smallvec::smallvec![0u8; self.algorithm.len()];
 
         let r = sig.r().to_vec();
         let s = sig.s().to_vec();
 
-        let sig_len = self.algorithm.sig_len();
+        let sig_len = self.algorithm.len();
         let half_len = sig_len / 2;
 
         out[(half_len - r.len())..half_len].copy_from_slice(&r);
@@ -245,10 +273,10 @@ fn es256_verify<T: HasPublic>(
     v: &[u8],
     sig: &[u8],
 ) -> Result<()> {
-    if sig.len() != alg.sig_len() {
+    if sig.len() != alg.len() {
         return Err(Error::VerificationError);
     }
-    let half_len = alg.sig_len() / 2;
+    let half_len = alg.len() / 2;
     let r = &sig[sig.iter().position(|&x| x != 0).unwrap_or(half_len - 1)..half_len];
     let mut s = &sig[half_len..sig.len()];
     s = &s[s.iter().position(|&x| x != 0).unwrap_or(half_len - 1)..];
