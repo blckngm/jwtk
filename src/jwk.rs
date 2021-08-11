@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::{
     ecdsa::{EcdsaAlgorithm, EcdsaPublicKey},
+    eddsa::Ed25519PublicKey,
     rsa::{RsaAlgorithm, RsaPublicKey},
     url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, Result,
     SigningKey, VerificationKey,
@@ -75,6 +76,18 @@ impl Jwk {
                     let y = base64::decode_config(y, url_safe_trailing_bits())?;
                     let alg = EcdsaAlgorithm::from_curve_name(crv)?;
                     return Ok(Box::new(EcdsaPublicKey::from_coordinates(&x, &y, alg)?));
+                }
+                _ => {}
+            },
+            "OKP" => match (self.crv.as_deref(), &self.x) {
+                (Some(crv), Some(ref x)) => {
+                    let x = base64::decode_config(x, url_safe_trailing_bits())?;
+                    match crv {
+                        "Ed25519" => {
+                            return Ok(Box::new(Ed25519PublicKey::from_bytes(&x)?));
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             },
@@ -355,8 +368,8 @@ mod tests {
     #[test]
     fn test_jwks_verify() -> Result<()> {
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES512)?;
-        let mut k_jwk = SigningKey::public_key_to_jwk(&k)?;
-        k_jwk.kid = Some("my key".into());
+        let k = WithKid::new("my key".into(), k);
+        let k_jwk = SigningKey::public_key_to_jwk(&k)?;
         let jwks = JwkSet { keys: vec![k_jwk] };
         let verifier = jwks.verifier();
 
