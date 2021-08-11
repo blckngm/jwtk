@@ -261,8 +261,12 @@ pub fn sign<ExtraClaims: Serialize>(
     claims: &mut HeaderAndClaims<ExtraClaims>,
     k: &dyn SigningKey,
 ) -> Result<String> {
-    let mut w = base64::write::EncoderStringWriter::new(url_safe_trailing_bits());
     claims.header.alg = k.alg().to_string();
+    if let Some(kid) = k.kid() {
+        claims.set_kid(kid);
+    }
+
+    let mut w = base64::write::EncoderStringWriter::new(url_safe_trailing_bits());
     serde_json::to_writer(&mut w, &claims.header)?;
 
     let mut buf = w.into_inner();
@@ -370,6 +374,13 @@ pub fn decode_without_verify<ExtraClaims: DeserializeOwned>(
 pub trait SigningKey {
     // A signing key has a rigid algorithm.
     fn alg(&self) -> &'static str;
+
+    /// Optional key id. If it is present, then it is automatically set in
+    /// header claims.
+    fn kid(&self) -> Option<&str> {
+        None
+    }
+
     // Es256 and eddsa signatures are 64-byte long.
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>>;
     fn public_key_to_jwk(&self) -> Result<Jwk>;
@@ -380,6 +391,34 @@ pub trait VerificationKey {
     // signatures generated with multiple algorithms.
     fn verify(&self, v: &[u8], sig: &[u8], alg: &str) -> Result<()>;
     fn public_key_to_jwk(&self) -> Result<Jwk>;
+}
+
+impl SigningKey for Box<dyn SigningKey + Send + Sync> {
+    fn alg(&self) -> &'static str {
+        (&**self).alg()
+    }
+
+    fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>> {
+        (&**self).sign(v)
+    }
+
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        (&**self).public_key_to_jwk()
+    }
+
+    fn kid(&self) -> Option<&str> {
+        (&**self).kid()
+    }
+}
+
+impl VerificationKey for Box<dyn VerificationKey + Send + Sync> {
+    fn verify(&self, v: &[u8], sig: &[u8], alg: &str) -> Result<()> {
+        (&**self).verify(v, sig, alg)
+    }
+
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        (&**self).public_key_to_jwk()
+    }
 }
 
 #[non_exhaustive]

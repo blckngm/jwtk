@@ -1,11 +1,14 @@
 //! JWK and JWK Set.
+//!
+//! Only public keys are really supported for now.
+
 use std::collections::HashMap;
 
 use crate::{
     ecdsa::{EcdsaAlgorithm, EcdsaPublicKey},
     rsa::{RsaAlgorithm, RsaAnyPublicKey, RsaPublicKey},
     url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, Result,
-    VerificationKey,
+    SigningKey, VerificationKey,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -157,6 +160,77 @@ impl JwkSetVerifier {
     }
 }
 
+/// A key associated with a key id (`kid`).
+///
+/// When the key is converted to JWK or used for signing, `kid` is automatically
+/// set.
+pub struct WithKid<S> {
+    kid: String,
+    inner: S,
+}
+
+impl<S> WithKid<S> {
+    pub fn new(kid: String, inner: S) -> Self {
+        Self { kid, inner }
+    }
+
+    pub fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    pub fn set_kid(&mut self, kid: impl Into<String>) {
+        self.kid = kid.into();
+    }
+
+    pub fn as_inner(&self) -> &S {
+        &self.inner
+    }
+
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
+
+    pub fn as_inner_mut(&mut self) -> &mut S {
+        &mut self.inner
+    }
+}
+
+impl<S: SigningKey> SigningKey for WithKid<S> {
+    fn kid(&self) -> Option<&str> {
+        Some(&self.kid)
+    }
+
+    fn sign(&self, v: &[u8]) -> Result<smallvec::SmallVec<[u8; 64]>> {
+        self.inner.sign(v)
+    }
+
+    fn alg(&self) -> &'static str {
+        self.inner.alg()
+    }
+
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let kid = self.kid.clone();
+        self.inner.public_key_to_jwk().map(|k| Jwk {
+            kid: Some(kid),
+            ..k
+        })
+    }
+}
+
+impl<S: VerificationKey> VerificationKey for WithKid<S> {
+    fn verify(&self, v: &[u8], sig: &[u8], alg: &str) -> Result<()> {
+        self.inner.verify(v, sig, alg)
+    }
+
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let kid = self.kid.clone();
+        self.inner.public_key_to_jwk().map(|k| Jwk {
+            kid: Some(kid),
+            ..k
+        })
+    }
+}
+
 #[cfg(feature = "remote-jwks")]
 struct JWKSCache {
     jwks: JwkSetVerifier,
@@ -281,7 +355,7 @@ mod tests {
     #[test]
     fn test_jwks_verify() -> Result<()> {
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES512)?;
-        let mut k_jwk = k.public_key_to_jwk()?;
+        let mut k_jwk = SigningKey::public_key_to_jwk(&k)?;
         k_jwk.kid = Some("my key".into());
         let jwks = JwkSet { keys: vec![k_jwk] };
         let verifier = jwks.verifier();

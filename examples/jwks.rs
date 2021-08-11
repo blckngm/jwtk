@@ -1,7 +1,7 @@
 //! A JWKS/JWT server.
 //!
-//! Read private key fro `key.pem`, supports RSA and EC keys. For RSA, you can
-//! set the RSA_ALGO env var to use algorithms other than RS256.
+//! Reads private key fro `key.pem` (supporting RSA and EC keys). For RSA, you
+//! can set the RSA_ALGO env var to use algorithms other than RS256.
 //!
 //! Jwks will be available at http://127.0.0.1:3000/jwks
 //!
@@ -13,13 +13,15 @@ use axum::{
     AddExtensionLayer,
 };
 use jwtk::{
-    jwk::JwkSet, private_key_from_pem, rsa::RsaAlgorithm, sign, HeaderAndClaims, SigningKey,
+    jwk::{JwkSet, WithKid},
+    private_key_from_pem,
+    rsa::RsaAlgorithm,
+    sign, HeaderAndClaims, SigningKey,
 };
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 struct State {
-    k: Box<dyn SigningKey + Send + Sync>,
-    kid: &'static str,
+    k: WithKid<Box<dyn SigningKey + Send + Sync>>,
     jwks: JwkSet,
 }
 
@@ -30,13 +32,12 @@ async fn jwks_handler(state: extract::Extension<Arc<State>>) -> impl IntoRespons
 async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
     let mut token = HeaderAndClaims::new_dynamic();
     token
-        .set_kid(state.kid)
         .set_iss("me")
         .set_sub("you")
         .add_aud("them")
         .set_exp_from_now(Duration::from_secs(300))
         .insert("foo", "bar");
-    let token = sign(&mut token, &*state.k).unwrap();
+    let token = sign(&mut token, &state.k).unwrap();
     Json(serde_json::json!({
         "token": token,
     }))
@@ -44,8 +45,6 @@ async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoRespon
 
 #[tokio::main]
 async fn main() -> jwtk::Result<()> {
-    let kid = "my key";
-
     let k = std::fs::read("key.pem")?;
 
     let k = private_key_from_pem(
@@ -62,13 +61,14 @@ async fn main() -> jwtk::Result<()> {
         },
     )?;
 
-    let mut k_public_jwk = k.public_key_to_jwk()?;
-    k_public_jwk.kid = Some(kid.into());
+    let k = WithKid::new("my key".into(), k);
+
+    let k_public_jwk = k.public_key_to_jwk()?;
     let jwks = JwkSet {
         keys: vec![k_public_jwk],
     };
 
-    let state = Arc::new(State { k, kid, jwks });
+    let state = Arc::new(State { k, jwks });
 
     let app = route("/jwks", get(jwks_handler))
         .route("/token", get(token_handler))
