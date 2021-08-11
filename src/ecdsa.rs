@@ -15,6 +15,8 @@ use crate::{jwk::Jwk, url_safe_trailing_bits, Error, Result, SigningKey, Verific
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EcdsaAlgorithm {
     ES256,
+    // https://datatracker.ietf.org/doc/html/draft-ietf-cose-webauthn-algorithms-04
+    ES256K,
     ES384,
     ES512,
 }
@@ -24,6 +26,7 @@ impl EcdsaAlgorithm {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => Nid::X9_62_PRIME256V1,
+            ES256K => Nid::SECP256K1,
             ES384 => Nid::SECP384R1,
             ES512 => Nid::SECP521R1,
         }
@@ -33,6 +36,7 @@ impl EcdsaAlgorithm {
         use EcdsaAlgorithm::*;
         Ok(match curve {
             Nid::X9_62_PRIME256V1 => ES256,
+            Nid::SECP256K1 => ES256K,
             Nid::SECP384R1 => ES384,
             Nid::SECP521R1 => ES512,
             _ => return Err(Error::UnsupportedOrInvalidKey),
@@ -42,7 +46,7 @@ impl EcdsaAlgorithm {
     fn digest(self) -> MessageDigest {
         use EcdsaAlgorithm::*;
         match self {
-            ES256 => MessageDigest::sha256(),
+            ES256 | ES256K => MessageDigest::sha256(),
             ES384 => MessageDigest::sha384(),
             ES512 => MessageDigest::sha512(),
         }
@@ -52,6 +56,7 @@ impl EcdsaAlgorithm {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => "ES256",
+            ES256K => "ES256K",
             ES384 => "ES384",
             ES512 => "ES512",
         }
@@ -61,6 +66,7 @@ impl EcdsaAlgorithm {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => "P-256",
+            ES256K => "secp256k1",
             ES384 => "P-384",
             ES512 => "P-521",
         }
@@ -70,6 +76,7 @@ impl EcdsaAlgorithm {
         use EcdsaAlgorithm::*;
         Ok(match name {
             "P-256" => ES256,
+            "secp256k1" => ES256K,
             "P-384" => ES384,
             "P-521" => ES512,
             _ => return Err(Error::UnsupportedOrInvalidKey),
@@ -80,7 +87,7 @@ impl EcdsaAlgorithm {
     fn len(self) -> usize {
         use EcdsaAlgorithm::*;
         match self {
-            ES256 => 64,
+            ES256 | ES256K => 64,
             ES384 => 96,
             ES512 => 132,
         }
@@ -349,11 +356,11 @@ mod tests {
         let pem = k.private_key_to_pem_pkcs8()?;
         EcdsaPrivateKey::from_pem(&pem)?;
 
-        let secp256k1_k = EcKey::generate(EcGroup::from_curve_name(Nid::SECP256K1)?.as_ref())?;
-        let secp256k1_k_pem = secp256k1_k.private_key_to_pem()?;
-        let secp256k1_k_pub_pem = secp256k1_k.public_key_to_pem()?;
-        assert!(EcdsaPrivateKey::from_pem(&secp256k1_k_pem).is_err());
-        assert!(EcdsaPublicKey::from_pem(&secp256k1_k_pub_pem).is_err());
+        let secp192k1_k = EcKey::generate(EcGroup::from_curve_name(Nid::SECP192K1)?.as_ref())?;
+        let secp192k1_k_pem = secp192k1_k.private_key_to_pem()?;
+        let secp192k1_k_pub_pem = secp192k1_k.public_key_to_pem()?;
+        assert!(EcdsaPrivateKey::from_pem(&secp192k1_k_pem).is_err());
+        assert!(EcdsaPublicKey::from_pem(&secp192k1_k_pub_pem).is_err());
 
         // Should be able to handle BEGIN EC PRIVATE KEY as well.
         let ec_pem = k.private_key.ec_key()?.private_key_to_pem()?;
@@ -389,6 +396,7 @@ mod tests {
     fn sign_verify() -> Result<()> {
         for alg in std::array::IntoIter::new([
             EcdsaAlgorithm::ES256,
+            EcdsaAlgorithm::ES256K,
             EcdsaAlgorithm::ES384,
             EcdsaAlgorithm::ES512,
         ]) {

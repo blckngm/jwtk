@@ -1,4 +1,4 @@
-#[cfg(feature = "jwks-remote")]
+#[cfg(feature = "remote-jwks")]
 #[tokio::main]
 async fn main() -> jwtk::Result<()> {
     use std::time::Duration;
@@ -29,5 +29,5 @@ async fn main() -> jwtk::Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "jwks-remote"))]
+#[cfg(not(feature = "remote-jwks"))]
 fn main() {}

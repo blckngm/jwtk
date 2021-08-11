@@ -1,13 +1,13 @@
 //! JWT signing (JWS) and verification, with first class JWK and JWK Set (JWKS)
 //! support.
 //!
-//! Supported algorithms:
+//! Supports almost all JWS algorithms:
 //!
 //! * HS256, HS384, HS512
+//! * Ed25519
+//! * ES256, ES384, ES512, ES256K
 //! * RS256, RS384, RS512
 //! * PS256, PS384, PS512
-//! * ES256, ES384, ES512
-//! * Ed25519
 //!
 //! Supports `exp` and `nbf` validations. (Other validations will not be
 //! supported, because they are mostly application specific and can be easily
@@ -15,8 +15,7 @@
 //!
 //! See the `examples` folder for some examples.
 //!
-//! Uses good old openssl for crypto. Because _ring_ does not expose some
-//! necessary APIs, and others doesn't seem mature enough.
+//! Uses good old openssl for crypto.
 
 pub mod hmac;
 
