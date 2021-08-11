@@ -1,22 +1,29 @@
-//! JWT signing (JWS) and verification, with first-class ES256, JWK and JWK Set
-//! (JWKS) support.
+//! JWT signing (JWS) and verification, with first class JWK and JWK Set (JWKS)
+//! support.
 //!
-//! Supports the HS256, RS256 and ES256 algorithms (for now). PR for others are
-//! welcome.
+//! Supported algorithms:
+//!
+//! * HS256, HS384, HS512
+//! * RS256, RS384, RS512
+//! * PS256, PS384, PS512
+//! * ES256, ES384, ES512
 //!
 //! Supports `exp` and `nbf` validations. (Other validations will not be
 //! supported, because they are mostly application specific and can be easily
-//! implemented by applications themselves.)
+//! implemented by applications.)
 //!
 //! See the `examples` folder for some examples.
 //!
 //! Uses good old openssl for crypto. Because _ring_ does not expose some
 //! necessary APIs, and others doesn't seem mature enough.
 
-pub mod es256;
-pub mod hs256;
+pub mod hmac;
+
+pub mod ecdsa;
+
+pub mod rsa;
+
 pub mod jwk;
-pub mod rs256;
 
 use std::{
     fmt,
@@ -24,9 +31,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use es256::{ES256PrivateKey, ES256PublicKey};
-use openssl::{error::ErrorStack, nid::Nid, pkey::PKey};
-use rs256::{RS256PrivateKey, RS256PublicKey};
+use ecdsa::{EcdsaPrivateKey, EcdsaPublicKey};
+use jwk::Jwk;
+use openssl::{error::ErrorStack, pkey::PKey};
+use rsa::{RsaAlgorithm, RsaAnyPublicKey, RsaPrivateKey};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 use smallvec::SmallVec;
@@ -38,8 +46,7 @@ pub struct Header {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alg: Option<String>,
+    pub alg: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kid: Option<String>,
@@ -255,7 +262,7 @@ pub fn sign<ExtraClaims: Serialize>(
     k: &dyn SigningKey,
 ) -> Result<String> {
     let mut w = base64::write::EncoderStringWriter::new(url_safe_trailing_bits());
-    claims.header.alg = Some(k.alg().to_string());
+    claims.header.alg = k.alg().to_string();
     serde_json::to_writer(&mut w, &claims.header)?;
 
     let mut buf = w.into_inner();
@@ -320,15 +327,15 @@ pub fn verify_only<ExtraClaims: DeserializeOwned>(
 
     let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
     let header: Header = serde_json::from_reader(header_r)?;
-    // First check that alg matches.
-    if header.alg.as_deref() != Some(k.alg()) {
-        return Err(Error::AlgMismatch);
-    }
 
     let sig = base64::decode_config(sig, url_safe_trailing_bits())?;
 
     // Verify the signature.
-    k.verify(token[..header_and_payload_len].as_bytes(), &sig)?;
+    k.verify(
+        token[..header_and_payload_len].as_bytes(),
+        &sig,
+        &header.alg,
+    )?;
 
     let payload_r = base64::read::DecoderReader::new(&mut payload, url_safe_trailing_bits());
     let claims: Claims<ExtraClaims> = serde_json::from_reader(payload_r)?;
@@ -361,14 +368,18 @@ pub fn decode_without_verify<ExtraClaims: DeserializeOwned>(
 }
 
 pub trait SigningKey {
+    // A signing key has a rigid algorithm.
     fn alg(&self) -> &'static str;
     // Es256 and eddsa signatures are 64-byte long.
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>>;
+    fn public_key_to_jwk(&self) -> Result<Jwk>;
 }
 
 pub trait VerificationKey {
-    fn alg(&self) -> &'static str;
-    fn verify(&self, v: &[u8], sig: &[u8]) -> Result<()>;
+    // `alg` is passed in because HMAC and RSA verification keys can verify
+    // signatures generated with multiple algorithms.
+    fn verify(&self, v: &[u8], sig: &[u8], alg: &str) -> Result<()>;
+    fn public_key_to_jwk(&self) -> Result<Jwk>;
 }
 
 #[non_exhaustive]
@@ -468,58 +479,55 @@ impl From<reqwest::Error> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Read an RSA/EC private key from PEM text representation.
-pub fn private_key_from_pem(pem: &[u8]) -> Result<Box<dyn SigningKey + Send + Sync>> {
+///
+/// For an EC public key, algorithm is deduced from the curve, e.g. P-256 -> ES256.
+///
+/// For an RSA public key, `if_rsa_algorithm` is used.
+pub fn private_key_from_pem(
+    pem: &[u8],
+    if_rsa_algorithm: RsaAlgorithm,
+) -> Result<Box<dyn SigningKey + Send + Sync>> {
     let pk = PKey::private_key_from_pem(pem)?;
-    if let Ok(rsa) = pk.rsa() {
-        if rsa.check_key()? {
-            return Ok(Box::new(RS256PrivateKey(pk)));
-        }
+    if pk.rsa().is_ok() {
+        let k = RsaPrivateKey::from_pkey(pk, if_rsa_algorithm)?;
+        return Ok(Box::new(k));
     }
-    if let Ok(ec) = pk.ec_key() {
-        ec.check_key()?;
-        if ec.group().curve_name() == Some(Nid::X9_62_PRIME256V1) {
-            return Ok(Box::new(ES256PrivateKey(pk)));
-        }
+    if pk.ec_key().is_ok() {
+        let k = EcdsaPrivateKey::from_pkey(pk)?;
+        return Ok(Box::new(k));
     }
     Err(Error::UnsupportedOrInvalidKey)
 }
 
 /// Read an RSA/EC public key from PEM text representation.
+///
+/// For an EC public key, algorithm is deduced from the curve, e.g. P-256 -> ES256.
+///
+/// For an RSA public key, signatures generated by any RSA algorithms can be verified.
 pub fn public_key_from_pem(pem: &[u8]) -> Result<Box<dyn VerificationKey + Send + Sync>> {
     let pk = PKey::public_key_from_pem(pem)?;
     if pk.rsa().is_ok() {
-        return Ok(Box::new(RS256PublicKey(pk)));
+        let k = RsaAnyPublicKey::from_pkey(pk);
+        return Ok(Box::new(k));
     }
-    if let Ok(ec) = pk.ec_key() {
-        ec.check_key()?;
-        if ec.group().curve_name() == Some(Nid::X9_62_PRIME256V1) {
-            return Ok(Box::new(ES256PublicKey(pk)));
-        }
+    if pk.ec_key().is_ok() {
+        let k = EcdsaPublicKey::from_pkey(pk)?;
+        return Ok(Box::new(k));
     }
     Err(Error::UnsupportedOrInvalidKey)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::ecdsa::EcdsaAlgorithm;
 
-    #[test]
-    fn rs256() -> Result<()> {
-        let k = RS256PrivateKey::generate(2048)?;
-        let n = k.n()?;
-        let e = k.e()?;
-        let pk = RS256PublicKey::from_components(&n, &e)?;
-        let sig = k.sign(b"...")?;
-        assert!(pk.verify(b"...", &sig).is_ok());
-        assert!(pk.verify(b"....", &sig).is_err());
-        Ok(())
-    }
+    use super::*;
 
     #[test]
     fn signing_and_verification() -> Result<()> {
         let mut claims = HeaderAndClaims::new_dynamic();
-        let k = ES256PrivateKey::generate()?;
-        let k1 = ES256PrivateKey::generate()?;
+        let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
+        let k1 = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
         claims
             .set_exp_from_now(Duration::from_secs(3))
             .set_nbf_from_now(Duration::from_secs(1))
@@ -550,22 +558,22 @@ mod tests {
 
     #[test]
     fn test_poly_pem() -> Result<()> {
-        let k = ES256PrivateKey::generate()?;
+        let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES384)?;
         let pem = k.private_key_to_pem_pkcs8()?;
 
-        private_key_from_pem(&pem)?;
+        private_key_from_pem(&pem, RsaAlgorithm::RS256)?;
         public_key_from_pem(&k.public_key_pem()?)?;
 
-        let k = RS256PrivateKey::generate(2048)?;
+        let k = RsaPrivateKey::generate(2048, RsaAlgorithm::RS256)?;
         let pem = k.private_key_to_pem_pkcs8()?;
 
-        private_key_from_pem(&pem)?;
+        private_key_from_pem(&pem, RsaAlgorithm::RS256)?;
         public_key_from_pem(&k.public_key_pem()?)?;
 
         let k = PKey::generate_ed448()?;
         let pem = k.private_key_to_pem_pkcs8()?;
 
-        assert!(private_key_from_pem(&pem).is_err());
+        assert!(private_key_from_pem(&pem, RsaAlgorithm::RS256).is_err());
         assert!(public_key_from_pem(&k.public_key_to_pem()?).is_err());
 
         Ok(())

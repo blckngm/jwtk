@@ -1,18 +1,24 @@
-/// A JWKS/JWT server.
+//! A JWKS/JWT server.
+//!
+//! Read private key fro `key.pem`, supports RSA and EC keys. For RSA, you can
+//! set the RSA_ALGO env var to use algorithms other than RS256.
+//!
+//! Jwks will be available at http://127.0.0.1:3000/jwks
+//!
+//! Tokens will be issued at http://127.0.0.1:3000/token
+
 use axum::{
     prelude::*,
     response::{IntoResponse, Json},
     AddExtensionLayer,
 };
 use jwtk::{
-    es256::ES256PrivateKey,
-    jwk::{JwkSet, PublicKeyToJwk},
-    sign, HeaderAndClaims,
+    jwk::JwkSet, private_key_from_pem, rsa::RsaAlgorithm, sign, HeaderAndClaims, SigningKey,
 };
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 struct State {
-    k: ES256PrivateKey,
+    k: Box<dyn SigningKey + Send + Sync>,
     kid: &'static str,
     jwks: JwkSet,
 }
@@ -30,7 +36,7 @@ async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoRespon
         .add_aud("them")
         .set_exp_from_now(Duration::from_secs(300))
         .insert("foo", "bar");
-    let token = sign(&mut token, &state.k).unwrap();
+    let token = sign(&mut token, &*state.k).unwrap();
     Json(serde_json::json!({
         "token": token,
     }))
@@ -39,9 +45,24 @@ async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoRespon
 #[tokio::main]
 async fn main() -> jwtk::Result<()> {
     let kid = "my key";
-    let k = ES256PrivateKey::generate()?;
 
-    let mut k_public_jwk = k.to_jwk()?;
+    let k = std::fs::read("key.pem")?;
+
+    let k = private_key_from_pem(
+        &k,
+        match std::env::var("RSA_ALGO").as_deref() {
+            Ok("RS256") => RsaAlgorithm::RS256,
+            Ok("RS384") => RsaAlgorithm::RS384,
+            Ok("RS512") => RsaAlgorithm::RS512,
+            Ok("PS256") => RsaAlgorithm::PS256,
+            Ok("PS384") => RsaAlgorithm::PS384,
+            Ok("PS512") => RsaAlgorithm::PS512,
+            Ok(_) => return Err(jwtk::Error::UnsupportedOrInvalidKey),
+            _ => RsaAlgorithm::RS256,
+        },
+    )?;
+
+    let mut k_public_jwk = k.public_key_to_jwk()?;
     k_public_jwk.kid = Some(kid.into());
     let jwks = JwkSet {
         keys: vec![k_public_jwk],

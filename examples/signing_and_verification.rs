@@ -1,12 +1,17 @@
 use jwtk::{
-    es256::{ES256PrivateKey, ES256PublicKey},
+    ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey, EcdsaPublicKey},
     sign, verify, HeaderAndClaims,
 };
 use serde_json::{Map, Value};
 use std::time::Duration;
 
 fn main() -> jwtk::Result<()> {
-    let k = ES256PrivateKey::generate()?;
+    let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
+
+    let pem = k.public_key_pem()?;
+    println!("Public Key:\n{}", std::str::from_utf8(&pem).unwrap());
+    let pk = EcdsaPublicKey::from_pem(&pem)?;
+
     let token = sign(
         HeaderAndClaims::new_dynamic()
             .set_exp_from_now(Duration::from_secs(300))
@@ -14,11 +19,7 @@ fn main() -> jwtk::Result<()> {
             .insert("foo", "bar"),
         &k,
     )?;
-    println!("token:\n{}\n", token);
-
-    let pem = k.public_key_pem()?;
-    println!("Public Key:\n{}", std::str::from_utf8(&pem).unwrap());
-    let pk = ES256PublicKey::from_pem(&pem)?;
+    println!("token:\n{}", token);
 
     let verified = verify::<Map<String, Value>>(&token, &pk)?;
     assert_eq!(verified.claims().extra["foo"], "bar");
