@@ -1,7 +1,7 @@
 use openssl::{hash::MessageDigest, memcmp, pkey::PKey, rand::rand_bytes, sign::Signer};
 use smallvec::{smallvec, SmallVec};
 
-use crate::{jwk::Jwk, Error, Result, SigningKey, VerificationKey};
+use crate::{Error, Result, SigningKey, VerificationKey};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,10 +78,6 @@ impl SigningKey for HmacKey {
         Ok(sig)
     }
 
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        Err(Error::UnsupportedOrInvalidKey)
-    }
-
     #[inline]
     fn alg(&self) -> &'static str {
         self.algorithm.name()
@@ -101,10 +97,6 @@ impl VerificationKey for HmacKey {
         } else {
             Err(Error::VerificationError)
         }
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        Err(Error::UnsupportedOrInvalidKey)
     }
 }
 

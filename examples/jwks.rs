@@ -14,14 +14,13 @@ use axum::{
 };
 use jwtk::{
     jwk::{JwkSet, WithKid},
-    private_key_from_pem,
     rsa::RsaAlgorithm,
-    sign, HeaderAndClaims, SigningKey,
+    sign, HeaderAndClaims, PublicKeyToJwk, SomePrivateKey,
 };
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 struct State {
-    k: WithKid<Box<dyn SigningKey + Send + Sync>>,
+    k: WithKid<SomePrivateKey>,
     jwks: JwkSet,
 }
 
@@ -47,7 +46,7 @@ async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoRespon
 async fn main() -> jwtk::Result<()> {
     let k = std::fs::read("key.pem")?;
 
-    let k = private_key_from_pem(
+    let k = SomePrivateKey::from_pem(
         &k,
         match std::env::var("RSA_ALGO").as_deref() {
             Ok("RS256") => RsaAlgorithm::RS256,

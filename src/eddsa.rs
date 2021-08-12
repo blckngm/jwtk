@@ -8,7 +8,9 @@ use openssl::{
 };
 use smallvec::SmallVec;
 
-use crate::{jwk::Jwk, url_safe_trailing_bits, Error, Result, SigningKey, VerificationKey};
+use crate::{
+    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+};
 
 #[derive(Debug)]
 pub struct Ed25519PrivateKey {
@@ -89,6 +91,18 @@ impl Ed25519PrivateKey {
     }
 }
 
+impl PublicKeyToJwk for Ed25519PrivateKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let bytes: [u8; 32] = self.public_key_bytes()?;
+        Ok(Jwk {
+            kty: "OKP".into(),
+            crv: Some("Ed25519".into()),
+            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
+            ..Jwk::default()
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct Ed25519PublicKey {
     public_key: PKey<Public>,
@@ -144,6 +158,18 @@ impl Ed25519PublicKey {
     }
 }
 
+impl PublicKeyToJwk for Ed25519PublicKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let bytes: [u8; 32] = self.to_bytes()?;
+        Ok(Jwk {
+            kty: "OKP".into(),
+            crv: Some("Ed25519".into()),
+            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
+            ..Jwk::default()
+        })
+    }
+}
+
 impl SigningKey for Ed25519PrivateKey {
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>> {
         let mut signer = Signer::new_without_digest(self.private_key.as_ref())?;
@@ -153,16 +179,6 @@ impl SigningKey for Ed25519PrivateKey {
         signer.sign_oneshot(&mut out, v)?;
 
         Ok(out.into())
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let bytes: [u8; 32] = self.public_key_bytes()?;
-        Ok(Jwk {
-            kty: "OKP".into(),
-            crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
     }
 
     fn alg(&self) -> &'static str {
@@ -183,16 +199,6 @@ impl VerificationKey for Ed25519PrivateKey {
             Err(Error::VerificationError)
         }
     }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let bytes: [u8; 32] = self.public_key_bytes()?;
-        Ok(Jwk {
-            kty: "OKP".into(),
-            crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
-    }
 }
 
 impl VerificationKey for Ed25519PublicKey {
@@ -207,16 +213,6 @@ impl VerificationKey for Ed25519PublicKey {
         } else {
             Err(Error::VerificationError)
         }
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let bytes: [u8; 32] = self.to_bytes()?;
-        Ok(Jwk {
-            kty: "OKP".into(),
-            crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
     }
 }
 
@@ -259,8 +255,7 @@ mod tests {
 
         assert_eq!(pk_pem, pk_pem1);
 
-        SigningKey::public_key_to_jwk(&k)?.to_verification_key()?;
-        VerificationKey::public_key_to_jwk(&k)?.to_verification_key()?;
+        k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?.to_verification_key()?;
 
         Ok(())

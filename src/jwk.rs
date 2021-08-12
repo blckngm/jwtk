@@ -8,8 +8,9 @@ use crate::{
     ecdsa::{EcdsaAlgorithm, EcdsaPublicKey},
     eddsa::Ed25519PublicKey,
     rsa::{RsaAlgorithm, RsaPublicKey},
-    url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, Result,
-    SigningKey, VerificationKey,
+    some::SomePublicKey,
+    url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, PublicKeyToJwk,
+    Result, SigningKey, VerificationKey,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -42,7 +43,7 @@ pub struct Jwk {
 }
 
 impl Jwk {
-    pub fn to_verification_key(&self) -> Result<Box<dyn VerificationKey + Send + Sync>> {
+    pub fn to_verification_key(&self) -> Result<SomePublicKey> {
         // Check `use` and `key_ops`.
         if !matches!(self.use_.as_deref(), None | Some("sig")) {
             return Err(Error::UnsupportedOrInvalidKey);
@@ -67,7 +68,9 @@ impl Jwk {
                     } else {
                         None
                     };
-                    return Ok(Box::new(RsaPublicKey::from_components(&n, &e, alg)?));
+                    return Ok(SomePublicKey::Rsa(RsaPublicKey::from_components(
+                        &n, &e, alg,
+                    )?));
                 }
                 _ => {}
             },
@@ -77,7 +80,9 @@ impl Jwk {
                     let x = base64::decode_config(x, url_safe_trailing_bits())?;
                     let y = base64::decode_config(y, url_safe_trailing_bits())?;
                     let alg = EcdsaAlgorithm::from_curve_name(crv)?;
-                    return Ok(Box::new(EcdsaPublicKey::from_coordinates(&x, &y, alg)?));
+                    return Ok(SomePublicKey::Ecdsa(EcdsaPublicKey::from_coordinates(
+                        &x, &y, alg,
+                    )?));
                 }
                 _ => {}
             },
@@ -86,7 +91,7 @@ impl Jwk {
                     let x = base64::decode_config(x, url_safe_trailing_bits())?;
                     match crv {
                         "Ed25519" => {
-                            return Ok(Box::new(Ed25519PublicKey::from_bytes(&x)?));
+                            return Ok(SomePublicKey::Ed25519(Ed25519PublicKey::from_bytes(&x)?));
                         }
                         _ => {}
                     }
@@ -124,13 +129,13 @@ impl JwkSet {
 
 /// Jwk set parsed and converted, ready to verify tokens.
 pub struct JwkSetVerifier {
-    keys: HashMap<String, Box<dyn VerificationKey + Send + Sync>>,
+    keys: HashMap<String, SomePublicKey>,
 }
 
 impl JwkSetVerifier {
-    pub fn find(&self, kid: &str) -> Option<&(dyn VerificationKey + Send + Sync)> {
+    pub fn find(&self, kid: &str) -> Option<&SomePublicKey> {
         if let Some(vk) = self.keys.get(kid) {
-            Some(&**vk)
+            Some(vk)
         } else {
             None
         }
@@ -177,8 +182,7 @@ impl JwkSetVerifier {
 
 /// A key associated with a key id (`kid`).
 ///
-/// When the key is converted to JWK or used for signing, `kid` is automatically
-/// set.
+/// When the key is used for signing, `kid` is automatically set.
 pub struct WithKid<S> {
     kid: String,
     inner: S,
@@ -222,27 +226,19 @@ impl<S: SigningKey> SigningKey for WithKid<S> {
     fn alg(&self) -> &'static str {
         self.inner.alg()
     }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let kid = self.kid.clone();
-        self.inner.public_key_to_jwk().map(|k| Jwk {
-            kid: Some(kid),
-            ..k
-        })
-    }
 }
 
 impl<S: VerificationKey> VerificationKey for WithKid<S> {
     fn verify(&self, v: &[u8], sig: &[u8], alg: &str) -> Result<()> {
         self.inner.verify(v, sig, alg)
     }
+}
 
+impl<K: PublicKeyToJwk> PublicKeyToJwk for WithKid<K> {
     fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let kid = self.kid.clone();
-        self.inner.public_key_to_jwk().map(|k| Jwk {
-            kid: Some(kid),
-            ..k
-        })
+        let mut jwk = self.inner.public_key_to_jwk()?;
+        jwk.kid = Some(self.kid.clone());
+        Ok(jwk)
     }
 }
 
@@ -371,7 +367,7 @@ mod tests {
     fn test_jwks_verify() -> Result<()> {
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES512)?;
         let k = WithKid::new("my key".into(), k);
-        let k_jwk = SigningKey::public_key_to_jwk(&k)?;
+        let k_jwk = k.public_key_to_jwk()?;
         let jwks = JwkSet { keys: vec![k_jwk] };
         let verifier = jwks.verifier();
 

@@ -9,7 +9,9 @@ use openssl::{
 };
 use smallvec::SmallVec;
 
-use crate::{jwk::Jwk, url_safe_trailing_bits, Error, Result, SigningKey, VerificationKey};
+use crate::{
+    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +154,20 @@ impl EcdsaPrivateKey {
     }
 }
 
+impl PublicKeyToJwk for EcdsaPrivateKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let (x, y) = self.coordinates()?;
+        Ok(Jwk {
+            kty: "EC".into(),
+            use_: Some("sig".into()),
+            crv: Some(self.algorithm.curve_name().into()),
+            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            ..Default::default()
+        })
+    }
+}
+
 fn pad_left(v: &mut Vec<u8>, len: usize) {
     debug_assert!(v.len() <= len);
     if v.len() == len {
@@ -233,6 +249,20 @@ impl EcdsaPublicKey {
     }
 }
 
+impl PublicKeyToJwk for EcdsaPublicKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        let (x, y) = self.coordinates()?;
+        Ok(Jwk {
+            kty: "EC".into(),
+            use_: Some("sig".into()),
+            crv: Some(self.algorithm.curve_name().into()),
+            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            ..Default::default()
+        })
+    }
+}
+
 impl SigningKey for EcdsaPrivateKey {
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>> {
         let mut signer = Signer::new(self.algorithm.digest(), self.private_key.as_ref())?;
@@ -256,25 +286,12 @@ impl SigningKey for EcdsaPrivateKey {
         Ok(out)
     }
 
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let (x, y) = self.coordinates()?;
-        Ok(Jwk {
-            kty: "EC".into(),
-            use_: Some("sig".into()),
-            alg: Some(self.algorithm.name().into()),
-            crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
-            ..Default::default()
-        })
-    }
-
     fn alg(&self) -> &'static str {
         self.algorithm.name()
     }
 }
 
-fn es256_verify<T: HasPublic>(
+fn ecdsa_verify<T: HasPublic>(
     alg: EcdsaAlgorithm,
     k: &PKeyRef<T>,
     v: &[u8],
@@ -306,20 +323,7 @@ impl VerificationKey for EcdsaPrivateKey {
             return Err(Error::VerificationError);
         }
 
-        es256_verify(self.algorithm, self.private_key.as_ref(), v, sig)
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let (x, y) = self.coordinates()?;
-        Ok(Jwk {
-            kty: "EC".into(),
-            use_: Some("sig".into()),
-            alg: Some(self.algorithm.name().into()),
-            crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
-            ..Default::default()
-        })
+        ecdsa_verify(self.algorithm, self.private_key.as_ref(), v, sig)
     }
 }
 
@@ -329,20 +333,7 @@ impl VerificationKey for EcdsaPublicKey {
             return Err(Error::VerificationError);
         }
 
-        es256_verify(self.algorithm, self.public_key.as_ref(), v, sig)
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        let (x, y) = self.coordinates()?;
-        Ok(Jwk {
-            kty: "EC".into(),
-            use_: Some("sig".into()),
-            alg: Some(self.algorithm.name().into()),
-            crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
-            ..Default::default()
-        })
+        ecdsa_verify(self.algorithm, self.public_key.as_ref(), v, sig)
     }
 }
 
@@ -386,7 +377,7 @@ mod tests {
 
         EcdsaPublicKey::from_coordinates(&x, &y, EcdsaAlgorithm::ES256)?;
 
-        SigningKey::public_key_to_jwk(&k)?.to_verification_key()?;
+        k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?.to_verification_key()?;
 
         Ok(())

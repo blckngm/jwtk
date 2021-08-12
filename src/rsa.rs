@@ -8,7 +8,9 @@ use openssl::{
 };
 use smallvec::SmallVec;
 
-use crate::{jwk::Jwk, url_safe_trailing_bits, Error, Result, SigningKey, VerificationKey};
+use crate::{
+    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+};
 
 /// RSA signature algorithms.
 #[non_exhaustive]
@@ -127,6 +129,23 @@ impl RsaPrivateKey {
     }
 }
 
+impl PublicKeyToJwk for RsaPrivateKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        Ok(Jwk {
+            kty: "RSA".into(),
+            alg: if self.verify_any {
+                None
+            } else {
+                Some(self.algorithm.name().into())
+            },
+            use_: Some("sig".into()),
+            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
+            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
+            ..Jwk::default()
+        })
+    }
+}
+
 /// RSA Public Key.
 #[derive(Debug)]
 pub struct RsaPublicKey {
@@ -184,6 +203,19 @@ impl RsaPublicKey {
     }
 }
 
+impl PublicKeyToJwk for RsaPublicKey {
+    fn public_key_to_jwk(&self) -> Result<Jwk> {
+        Ok(Jwk {
+            kty: "RSA".into(),
+            alg: self.algorithm.map(|alg| alg.name().to_string()),
+            use_: Some("sig".into()),
+            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
+            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
+            ..Jwk::default()
+        })
+    }
+}
+
 impl SigningKey for RsaPrivateKey {
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>> {
         let mut signer = Signer::new(self.algorithm.digest(), self.private_key.as_ref())?;
@@ -194,20 +226,6 @@ impl SigningKey for RsaPrivateKey {
 
         signer.update(v)?;
         Ok(signer.sign_to_vec()?.into())
-    }
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        Ok(Jwk {
-            kty: "RSA".into(),
-            alg: if self.verify_any {
-                None
-            } else {
-                Some(self.algorithm.name().into())
-            },
-            use_: Some("sig".into()),
-            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
-            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
     }
 
     fn alg(&self) -> &'static str {
@@ -237,21 +255,6 @@ impl VerificationKey for RsaPrivateKey {
             Err(Error::VerificationError)
         }
     }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        Ok(Jwk {
-            kty: "RSA".into(),
-            alg: if self.verify_any {
-                None
-            } else {
-                Some(self.algorithm.name().into())
-            },
-            use_: Some("sig".into()),
-            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
-            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
-    }
 }
 
 impl VerificationKey for RsaPublicKey {
@@ -275,17 +278,6 @@ impl VerificationKey for RsaPublicKey {
         } else {
             Err(Error::VerificationError)
         }
-    }
-
-    fn public_key_to_jwk(&self) -> Result<Jwk> {
-        Ok(Jwk {
-            kty: "RSA".into(),
-            alg: self.algorithm.map(|alg| alg.name().to_string()),
-            use_: Some("sig".into()),
-            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
-            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
-            ..Jwk::default()
-        })
     }
 }
 
@@ -321,7 +313,7 @@ mod tests {
 
         assert_eq!(k.alg(), "PS384");
 
-        SigningKey::public_key_to_jwk(&k)?.to_verification_key()?;
+        k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?;
 
         Ok(())
