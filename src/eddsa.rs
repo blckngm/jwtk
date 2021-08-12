@@ -86,7 +86,7 @@ impl Ed25519PrivateKey {
         Ok(self.private_key.private_key_to_pem_pkcs8()?)
     }
 
-    pub fn public_key_pem(&self) -> Result<Vec<u8>> {
+    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
         Ok(self.private_key.public_key_to_pem()?)
     }
 }
@@ -245,7 +245,7 @@ mod tests {
         assert!(Ed25519PrivateKey::from_pem(&secp256k1_k_pem).is_err());
         assert!(Ed25519PublicKey::from_pem(&secp256k1_k_pub_pem).is_err());
 
-        let pk_pem = k.public_key_pem()?;
+        let pk_pem = k.public_key_to_pem()?;
 
         let pk = Ed25519PublicKey::from_pem(&pk_pem)?;
 
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn sign_verify() -> Result<()> {
         let k = Ed25519PrivateKey::generate()?;
-        let pk = Ed25519PublicKey::from_pem(&k.public_key_pem()?)?;
+        let pk = Ed25519PublicKey::from_pem(&k.public_key_to_pem()?)?;
         let sig = k.sign(b"...")?;
         assert!(k.verify(b"...", &sig, "EdDSA").is_ok());
         assert!(pk.verify(b"...", &sig, "EdDSA").is_ok());

@@ -135,7 +135,7 @@ impl EcdsaPrivateKey {
         Ok(self.private_key.private_key_to_pem_pkcs8()?)
     }
 
-    pub fn public_key_pem(&self) -> Result<Vec<u8>> {
+    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
         Ok(self.private_key.public_key_to_pem()?)
     }
 
@@ -360,7 +360,7 @@ mod tests {
             .contains("BEGIN EC PRIVATE KEY"));
         EcdsaPrivateKey::from_pem(&ec_pem)?;
 
-        let pk_pem = k.public_key_pem()?;
+        let pk_pem = k.public_key_to_pem()?;
 
         let pk = EcdsaPublicKey::from_pem(&pk_pem)?;
 

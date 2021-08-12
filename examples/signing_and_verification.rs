@@ -8,7 +8,7 @@ use std::time::Duration;
 fn main() -> jwtk::Result<()> {
     let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
 
-    let pem = k.public_key_pem()?;
+    let pem = k.public_key_to_pem()?;
     println!("Public Key:\n{}", std::str::from_utf8(&pem).unwrap());
     let pk = EcdsaPublicKey::from_pem(&pem)?;
 

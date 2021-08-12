@@ -112,7 +112,7 @@ impl RsaPrivateKey {
         Ok(self.private_key.private_key_to_pem_pkcs8()?)
     }
 
-    pub fn public_key_pem(&self) -> Result<Vec<u8>> {
+    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
         Ok(self.private_key.public_key_to_pem()?)
     }
 
@@ -297,7 +297,7 @@ mod tests {
             EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?.private_key_to_pem_pkcs8()?;
         assert!(RsaPrivateKey::from_pem(&es256key_pem, RsaAlgorithm::PS384).is_err());
 
-        let pk_pem = k.public_key_pem()?;
+        let pk_pem = k.public_key_to_pem()?;
         let pk_pem_pkcs1 = k.public_key_pem_pkcs1()?;
 
         let pk = RsaPublicKey::from_pem(&pk_pem, None)?;
@@ -330,7 +330,7 @@ mod tests {
             RsaAlgorithm::PS512,
         ]) {
             let k = RsaPrivateKey::generate(2048, alg)?;
-            let pk = RsaPublicKey::from_pem(&k.public_key_pem()?, None)?;
+            let pk = RsaPublicKey::from_pem(&k.public_key_to_pem()?, None)?;
             let sig = k.sign(b"...")?;
             assert!(k.verify(b"...", &sig, alg.name()).is_ok());
             assert!(k.verify(b"...", &sig, "WRONG ALG").is_err());

@@ -52,6 +52,22 @@ impl SomePrivateKey {
             _ => Err(Error::UnsupportedOrInvalidKey),
         }
     }
+
+    pub fn private_key_to_pem_pkcs8(&self) -> Result<Vec<u8>> {
+        match self {
+            SomePrivateKey::Ed25519(ed) => ed.private_key_to_pem_pkcs8(),
+            SomePrivateKey::Ecdsa(ec) => ec.private_key_to_pem_pkcs8(),
+            SomePrivateKey::Rsa(rsa) => rsa.private_key_to_pem_pkcs8(),
+        }
+    }
+
+    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
+        match self {
+            SomePrivateKey::Ed25519(ed) => ed.public_key_to_pem(),
+            SomePrivateKey::Ecdsa(ec) => ec.public_key_to_pem(),
+            SomePrivateKey::Rsa(rsa) => rsa.public_key_to_pem(),
+        }
+    }
 }
 
 impl PublicKeyToJwk for SomePrivateKey {
@@ -88,6 +104,14 @@ impl SomePublicKey {
                 Ok(Self::Ed25519(k))
             }
             _ => Err(Error::UnsupportedOrInvalidKey),
+        }
+    }
+
+    pub fn to_pem(&self) -> Result<Vec<u8>> {
+        match self {
+            SomePublicKey::Ed25519(ed) => ed.to_pem(),
+            SomePublicKey::Ecdsa(ec) => ec.to_pem(),
+            SomePublicKey::Rsa(rsa) => rsa.to_pem(),
         }
     }
 }
