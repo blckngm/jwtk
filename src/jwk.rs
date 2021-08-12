@@ -13,6 +13,8 @@ use crate::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+// TODO: private key jwk.
+
 /// JWK Representation.
 #[non_exhaustive]
 #[derive(Debug, Deserialize, Serialize, Default)]
