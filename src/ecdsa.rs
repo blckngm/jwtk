@@ -1,13 +1,14 @@
+use foreign_types::ForeignTypeRef;
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey},
     ecdsa::EcdsaSig,
-    hash::MessageDigest,
+    hash::{hash, MessageDigest},
     nid::Nid,
     pkey::{HasPublic, PKey, PKeyRef, Private, Public},
-    sign::{Signer, Verifier},
 };
-use smallvec::SmallVec;
+use openssl_sys::BN_bn2bin;
+use smallvec::{smallvec, SmallVec};
 
 use crate::{
     jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
@@ -265,23 +266,25 @@ impl PublicKeyToJwk for EcdsaPublicKey {
 
 impl SigningKey for EcdsaPrivateKey {
     fn sign(&self, v: &[u8]) -> Result<SmallVec<[u8; 64]>> {
-        let mut signer = Signer::new(self.algorithm.digest(), self.private_key.as_ref())?;
-        signer.update(v)?;
-        let sig_der = signer.sign_to_vec()?;
+        let hash = hash(self.algorithm.digest(), v)?;
 
-        // Convert from DER to fixed length.
-        let sig = EcdsaSig::from_der(&sig_der)?;
-
-        let mut out = smallvec::smallvec![0u8; self.algorithm.len()];
-
-        let r = sig.r().to_vec();
-        let s = sig.s().to_vec();
+        // Use the low-level signing API we get the `r`, `s` bytes more easily:
+        // No need to parse the ASN.1 DER encoded signature.
+        let sig = EcdsaSig::sign(&hash, self.private_key.ec_key()?.as_ref())?;
 
         let sig_len = self.algorithm.len();
-        let half_len = sig_len / 2;
+        let mut out = smallvec![0u8; sig_len];
 
-        out[(half_len - r.len())..half_len].copy_from_slice(&r);
-        out[(sig_len - s.len())..].copy_from_slice(&s);
+        let r = sig.r();
+        let r_len = r.num_bytes() as usize;
+        debug_assert!(r_len <= sig_len / 2);
+
+        let s = sig.s();
+        let s_len = s.num_bytes() as usize;
+        debug_assert!(s_len <= sig_len / 2);
+
+        unsafe { BN_bn2bin(r.as_ptr(), out[sig_len / 2 - r_len..].as_mut_ptr()) };
+        unsafe { BN_bn2bin(s.as_ptr(), out[sig_len - s_len..].as_mut_ptr()) };
 
         Ok(out)
     }
@@ -300,16 +303,11 @@ fn ecdsa_verify<T: HasPublic>(
     if sig.len() != alg.len() {
         return Err(Error::VerificationError);
     }
-    let half_len = alg.len() / 2;
-    let r = &sig[sig.iter().position(|&x| x != 0).unwrap_or(half_len - 1)..half_len];
-    let mut s = &sig[half_len..sig.len()];
-    s = &s[s.iter().position(|&x| x != 0).unwrap_or(half_len - 1)..];
-
+    // There may be some leading zero bytes in r and s, but it does not matter.
+    let (r, s) = sig.split_at(alg.len() / 2);
     let sig = EcdsaSig::from_private_components(BigNum::from_slice(r)?, BigNum::from_slice(s)?)?;
-    let der = sig.to_der()?;
-
-    let mut verifier = Verifier::new(alg.digest(), k)?;
-    if verifier.verify_oneshot(&der, v)? {
+    let hash = hash(alg.digest(), v)?;
+    if sig.verify(&hash, k.ec_key()?.as_ref())? {
         Ok(())
     } else {
         Err(Error::VerificationError)

@@ -30,6 +30,7 @@ pub mod rsa;
 pub mod jwk;
 
 use std::{
+    borrow::Cow,
     fmt,
     io::Write,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -48,7 +49,7 @@ pub struct Header {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<String>,
 
-    pub alg: String,
+    pub alg: Cow<'static, str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kid: Option<String>,
@@ -266,7 +267,7 @@ pub fn sign<ExtraClaims: Serialize>(
     claims: &mut HeaderAndClaims<ExtraClaims>,
     k: &dyn SigningKey,
 ) -> Result<String> {
-    claims.header.alg = k.alg().to_string();
+    claims.header.alg = k.alg().into();
     if let Some(kid) = k.kid() {
         claims.set_kid(kid);
     }
