@@ -132,12 +132,14 @@ impl EcdsaPrivateKey {
         Self::from_pkey(pk)
     }
 
-    pub fn private_key_to_pem_pkcs8(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.private_key_to_pem_pkcs8()?)
+    pub fn private_key_to_pem_pkcs8(&self) -> Result<String> {
+        Ok(String::from_utf8(
+            self.private_key.private_key_to_pem_pkcs8()?,
+        )?)
     }
 
-    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.public_key_to_pem()?)
+    pub fn public_key_to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.private_key.public_key_to_pem()?)?)
     }
 
     /// Public key X Y coordinates. Always padded to the full size.
@@ -218,8 +220,8 @@ impl EcdsaPublicKey {
         Self::from_pkey(pk)
     }
 
-    pub fn to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.public_key.public_key_to_pem()?)
+    pub fn to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.public_key.public_key_to_pem()?)?)
     }
 
     /// X Y coordinates. Always padded to the full size.
@@ -343,7 +345,7 @@ mod tests {
     fn conversion() -> Result<()> {
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
         let pem = k.private_key_to_pem_pkcs8()?;
-        EcdsaPrivateKey::from_pem(&pem)?;
+        EcdsaPrivateKey::from_pem(pem.as_bytes())?;
 
         let secp192k1_k = EcKey::generate(EcGroup::from_curve_name(Nid::SECP192K1)?.as_ref())?;
         let secp192k1_k_pem = secp192k1_k.private_key_to_pem()?;
@@ -360,7 +362,7 @@ mod tests {
 
         let pk_pem = k.public_key_to_pem()?;
 
-        let pk = EcdsaPublicKey::from_pem(&pk_pem)?;
+        let pk = EcdsaPublicKey::from_pem(pk_pem.as_bytes())?;
 
         println!("k: {:?}, pk: {:?}", k, pk);
 

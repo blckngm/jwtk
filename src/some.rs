@@ -10,6 +10,10 @@ use crate::{
     Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
 };
 
+/// An RSA, EC or Ed25519 private key.
+///
+/// Use this if you just want to load SOME private key from an external pem
+/// file.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum SomePrivateKey {
@@ -18,6 +22,10 @@ pub enum SomePrivateKey {
     Rsa(RsaPrivateKey),
 }
 
+/// An RSA, EC or Ed25519 public.
+///
+/// Use this if you just want to load SOME public key from an external pem file
+/// or JWK.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum SomePublicKey {
@@ -53,7 +61,7 @@ impl SomePrivateKey {
         }
     }
 
-    pub fn private_key_to_pem_pkcs8(&self) -> Result<Vec<u8>> {
+    pub fn private_key_to_pem_pkcs8(&self) -> Result<String> {
         match self {
             SomePrivateKey::Ed25519(ed) => ed.private_key_to_pem_pkcs8(),
             SomePrivateKey::Ecdsa(ec) => ec.private_key_to_pem_pkcs8(),
@@ -61,7 +69,7 @@ impl SomePrivateKey {
         }
     }
 
-    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
+    pub fn public_key_to_pem(&self) -> Result<String> {
         match self {
             SomePrivateKey::Ed25519(ed) => ed.public_key_to_pem(),
             SomePrivateKey::Ecdsa(ec) => ec.public_key_to_pem(),
@@ -107,7 +115,7 @@ impl SomePublicKey {
         }
     }
 
-    pub fn to_pem(&self) -> Result<Vec<u8>> {
+    pub fn to_pem(&self) -> Result<String> {
         match self {
             SomePublicKey::Ed25519(ed) => ed.to_pem(),
             SomePublicKey::Ecdsa(ec) => ec.to_pem(),

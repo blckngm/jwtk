@@ -1,7 +1,7 @@
-//! A JWKS/JWT server.
+//! A JWKS server and token issuer.
 //!
-//! Reads private key fro `key.pem` (supporting RSA and EC keys). For RSA, you
-//! can set the RSA_ALGO env var to use algorithms other than RS256.
+//! Reads private key fro `key.pem` (supports RSA, EC and Ed25519 keys). For
+//! RSA, you can set the RSA_ALGO env var to use algorithms other than RS256.
 //!
 //! Jwks will be available at http://127.0.0.1:3000/jwks
 //!
@@ -49,16 +49,11 @@ async fn main() -> jwtk::Result<()> {
     let k = SomePrivateKey::from_pem(
         &k,
         match std::env::var("RSA_ALGO").as_deref() {
-            Ok("RS256") => RsaAlgorithm::RS256,
-            Ok("RS384") => RsaAlgorithm::RS384,
-            Ok("RS512") => RsaAlgorithm::RS512,
-            Ok("PS256") => RsaAlgorithm::PS256,
-            Ok("PS384") => RsaAlgorithm::PS384,
-            Ok("PS512") => RsaAlgorithm::PS512,
-            Ok(_) => return Err(jwtk::Error::UnsupportedOrInvalidKey),
+            Ok(alg) => RsaAlgorithm::from_name(alg)?,
             _ => RsaAlgorithm::RS256,
         },
     )?;
+    println!("using key {:?}", k);
 
     let k = WithKid::new("my key".into(), k);
 

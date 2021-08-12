@@ -82,12 +82,14 @@ impl Ed25519PrivateKey {
         Ok(out)
     }
 
-    pub fn private_key_to_pem_pkcs8(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.private_key_to_pem_pkcs8()?)
+    pub fn private_key_to_pem_pkcs8(&self) -> Result<String> {
+        Ok(String::from_utf8(
+            self.private_key.private_key_to_pem_pkcs8()?,
+        )?)
     }
 
-    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.public_key_to_pem()?)
+    pub fn public_key_to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.private_key.public_key_to_pem()?)?)
     }
 }
 
@@ -138,8 +140,8 @@ impl Ed25519PublicKey {
         })
     }
 
-    pub fn to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.public_key.public_key_to_pem()?)
+    pub fn to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.public_key.public_key_to_pem()?)?)
     }
 
     pub fn to_bytes(&self) -> Result<[u8; 32]> {
@@ -237,7 +239,7 @@ mod tests {
         }
 
         let pem = k.private_key_to_pem_pkcs8()?;
-        Ed25519PrivateKey::from_pem(&pem)?;
+        Ed25519PrivateKey::from_pem(pem.as_bytes())?;
 
         let secp256k1_k = EcKey::generate(EcGroup::from_curve_name(Nid::SECP256K1)?.as_ref())?;
         let secp256k1_k_pem = secp256k1_k.private_key_to_pem()?;
@@ -247,7 +249,7 @@ mod tests {
 
         let pk_pem = k.public_key_to_pem()?;
 
-        let pk = Ed25519PublicKey::from_pem(&pk_pem)?;
+        let pk = Ed25519PublicKey::from_pem(pk_pem.as_bytes())?;
 
         println!("k: {:?}, pk: {:?}", k, pk);
 
@@ -264,7 +266,7 @@ mod tests {
     #[test]
     fn sign_verify() -> Result<()> {
         let k = Ed25519PrivateKey::generate()?;
-        let pk = Ed25519PublicKey::from_pem(&k.public_key_to_pem()?)?;
+        let pk = Ed25519PublicKey::from_pem(k.public_key_to_pem()?.as_bytes())?;
         let sig = k.sign(b"...")?;
         assert!(k.verify(b"...", &sig, "EdDSA").is_ok());
         assert!(pk.verify(b"...", &sig, "EdDSA").is_ok());

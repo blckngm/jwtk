@@ -25,7 +25,7 @@ pub enum RsaAlgorithm {
 }
 
 impl RsaAlgorithm {
-    fn is_pss(self) -> bool {
+    pub fn is_pss(self) -> bool {
         matches!(
             self,
             RsaAlgorithm::PS256 | RsaAlgorithm::PS384 | RsaAlgorithm::PS512
@@ -41,7 +41,7 @@ impl RsaAlgorithm {
         }
     }
 
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         use RsaAlgorithm::*;
         match self {
             RS256 => "RS256",
@@ -53,7 +53,7 @@ impl RsaAlgorithm {
         }
     }
 
-    pub(crate) fn from_name(name: &str) -> Result<Self> {
+    pub fn from_name(name: &str) -> Result<Self> {
         Ok(match name {
             "RS256" => RsaAlgorithm::RS256,
             "RS384" => RsaAlgorithm::RS384,
@@ -108,16 +108,20 @@ impl RsaPrivateKey {
         Self::from_pkey(pk, algorithm)
     }
 
-    pub fn private_key_to_pem_pkcs8(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.private_key_to_pem_pkcs8()?)
+    pub fn private_key_to_pem_pkcs8(&self) -> Result<String> {
+        Ok(String::from_utf8(
+            self.private_key.private_key_to_pem_pkcs8()?,
+        )?)
     }
 
-    pub fn public_key_to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.public_key_to_pem()?)
+    pub fn public_key_to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.private_key.public_key_to_pem()?)?)
     }
 
-    pub fn public_key_pem_pkcs1(&self) -> Result<Vec<u8>> {
-        Ok(self.private_key.rsa()?.public_key_to_pem_pkcs1()?)
+    pub fn public_key_to_pem_pkcs1(&self) -> Result<String> {
+        Ok(String::from_utf8(
+            self.private_key.rsa()?.public_key_to_pem_pkcs1()?,
+        )?)
     }
 
     pub fn n(&self) -> Result<Vec<u8>> {
@@ -185,13 +189,15 @@ impl RsaPublicKey {
     }
 
     /// BEGIN PUBLIC KEY
-    pub fn to_pem(&self) -> Result<Vec<u8>> {
-        Ok(self.public_key.public_key_to_pem()?)
+    pub fn to_pem(&self) -> Result<String> {
+        Ok(String::from_utf8(self.public_key.public_key_to_pem()?)?)
     }
 
     /// BEGIN RSA PUBLIC KEY
-    pub fn to_pem_pkcs1(&self) -> Result<Vec<u8>> {
-        Ok(self.public_key.rsa()?.public_key_to_pem_pkcs1()?)
+    pub fn to_pem_pkcs1(&self) -> Result<String> {
+        Ok(String::from_utf8(
+            self.public_key.rsa()?.public_key_to_pem_pkcs1()?,
+        )?)
     }
 
     pub fn n(&self) -> Result<Vec<u8>> {
@@ -291,17 +297,17 @@ mod tests {
     fn conversion() -> Result<()> {
         let k = RsaPrivateKey::generate(2048, RsaAlgorithm::PS384)?;
         let pem = k.private_key_to_pem_pkcs8()?;
-        RsaPrivateKey::from_pem(&pem, RsaAlgorithm::PS384)?;
+        RsaPrivateKey::from_pem(pem.as_bytes(), RsaAlgorithm::PS384)?;
 
         let es256key_pem =
             EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?.private_key_to_pem_pkcs8()?;
-        assert!(RsaPrivateKey::from_pem(&es256key_pem, RsaAlgorithm::PS384).is_err());
+        assert!(RsaPrivateKey::from_pem(es256key_pem.as_bytes(), RsaAlgorithm::PS384).is_err());
 
         let pk_pem = k.public_key_to_pem()?;
-        let pk_pem_pkcs1 = k.public_key_pem_pkcs1()?;
+        let pk_pem_pkcs1 = k.public_key_to_pem_pkcs1()?;
 
-        let pk = RsaPublicKey::from_pem(&pk_pem, None)?;
-        let pk1 = RsaPublicKey::from_pem(&pk_pem_pkcs1, None)?;
+        let pk = RsaPublicKey::from_pem(pk_pem.as_bytes(), None)?;
+        let pk1 = RsaPublicKey::from_pem(pk_pem_pkcs1.as_bytes(), None)?;
 
         println!("pk: {:?}", pk);
 
@@ -330,7 +336,7 @@ mod tests {
             RsaAlgorithm::PS512,
         ]) {
             let k = RsaPrivateKey::generate(2048, alg)?;
-            let pk = RsaPublicKey::from_pem(&k.public_key_to_pem()?, None)?;
+            let pk = RsaPublicKey::from_pem(k.public_key_to_pem()?.as_bytes(), None)?;
             let sig = k.sign(b"...")?;
             assert!(k.verify(b"...", &sig, alg.name()).is_ok());
             assert!(k.verify(b"...", &sig, "WRONG ALG").is_err());

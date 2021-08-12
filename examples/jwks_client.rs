@@ -24,7 +24,8 @@ async fn main() -> jwtk::Result<()> {
     );
     let c = j.verify::<Map<String, Value>>(&v.token).await?;
 
-    println!("{}", serde_json::to_string(c.claims())?);
+    println!("headers:\n{}", serde_json::to_string(c.header())?);
+    println!("claims:\n{}", serde_json::to_string(c.claims())?);
 
     Ok(())
 }

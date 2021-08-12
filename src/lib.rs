@@ -33,6 +33,7 @@ use std::{
     borrow::Cow,
     fmt,
     io::Write,
+    string::FromUtf8Error,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -413,6 +414,7 @@ pub enum Error {
     /// The token is not valid yet , i.e. `nbf` check failed.
     Before,
     UnsupportedOrInvalidKey,
+    Utf8(FromUtf8Error),
     IoError(std::io::Error),
     OpenSsl(ErrorStack),
     SerdeJson(serde_json::Error),
@@ -424,12 +426,13 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::IoError(ref e) => e.fmt(f),
-            Error::OpenSsl(ref e) => e.fmt(f),
-            Error::SerdeJson(ref e) => e.fmt(f),
-            Error::Decode(ref e) => e.fmt(f),
+            Error::IoError(e) => e.fmt(f),
+            Error::OpenSsl(e) => e.fmt(f),
+            Error::SerdeJson(e) => e.fmt(f),
+            Error::Decode(e) => e.fmt(f),
             #[cfg(feature = "remote-jwks")]
-            Error::Reqwest(ref e) => e.fmt(f),
+            Error::Reqwest(e) => e.fmt(f),
+            Error::Utf8(e) => e.fmt(f),
             Error::VerificationError => "failed to verify signature".fmt(f),
             Error::AlgMismatch => {
                 "the alg field in JWT header is different from what the verification key uses"
@@ -448,12 +451,13 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::IoError(ref e) => Some(e),
-            Error::OpenSsl(ref e) => Some(e),
-            Error::SerdeJson(ref e) => Some(e),
-            Error::Decode(ref e) => Some(e),
+            Error::IoError(e) => Some(e),
+            Error::OpenSsl(e) => Some(e),
+            Error::SerdeJson(e) => Some(e),
+            Error::Decode(e) => Some(e),
+            Error::Utf8(e) => Some(e),
             #[cfg(feature = "remote-jwks")]
-            Error::Reqwest(ref e) => Some(e),
+            Error::Reqwest(e) => Some(e),
             _ => None,
         }
     }
@@ -484,6 +488,13 @@ impl From<base64::DecodeError> for Error {
     #[inline]
     fn from(e: base64::DecodeError) -> Self {
         Error::Decode(e)
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    #[inline]
+    fn from(e: FromUtf8Error) -> Self {
+        Error::Utf8(e)
     }
 }
 
