@@ -2,7 +2,7 @@
 use openssl::{
     bn::BigNum,
     hash::MessageDigest,
-    pkey::{PKey, Private, Public},
+    pkey::{Id, PKey, Private, Public},
     rsa::{Padding, Rsa},
     sign::{RsaPssSaltlen, Signer, Verifier},
 };
@@ -93,7 +93,7 @@ impl RsaPrivateKey {
     }
 
     pub(crate) fn from_pkey(pkey: PKey<Private>, algorithm: RsaAlgorithm) -> Result<Self> {
-        if !pkey.rsa()?.check_key()? {
+        if pkey.bits() < 2048 || !pkey.rsa()?.check_key()? {
             return Err(Error::UnsupportedOrInvalidKey);
         }
         Ok(Self {
@@ -162,7 +162,9 @@ pub struct RsaPublicKey {
 
 impl RsaPublicKey {
     pub(crate) fn from_pkey(pkey: PKey<Public>, algorithm: Option<RsaAlgorithm>) -> Result<Self> {
-        pkey.rsa()?;
+        if pkey.id() != Id::RSA || pkey.bits() < 2048 {
+            return Err(Error::UnsupportedOrInvalidKey);
+        }
         Ok(Self {
             public_key: pkey,
             algorithm,
@@ -182,10 +184,7 @@ impl RsaPublicKey {
 
     pub fn from_components(n: &[u8], e: &[u8], algorithm: Option<RsaAlgorithm>) -> Result<Self> {
         let rsa = Rsa::from_public_components(BigNum::from_slice(n)?, BigNum::from_slice(e)?)?;
-        Ok(Self {
-            public_key: PKey::from_rsa(rsa)?,
-            algorithm,
-        })
+        Self::from_pkey(PKey::from_rsa(rsa)?, algorithm)
     }
 
     /// BEGIN PUBLIC KEY
