@@ -85,7 +85,7 @@ fn bench_sig_ed25519(b: &mut test::Bencher) {
     let k = Ed25519PrivateKey::generate().unwrap();
 
     b.iter(|| {
-        let token = jwtk::sign(
+        jwtk::sign(
             HeaderAndClaims::with_claims(())
                 .set_exp_from_now(Duration::from_secs(60))
                 .set_sub("you")
@@ -93,7 +93,6 @@ fn bench_sig_ed25519(b: &mut test::Bencher) {
                 .set_iat_now(),
             &k,
         )
-        .unwrap();
-        println!("{}", token);
+        .unwrap()
     });
 }
