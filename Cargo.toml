@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2018"
 repository = "https://github.com/sopium/jwtk"
 license = "MIT"
-description = "JWT signing (JWS) and verification, with first-class ES256, JWK and JWK Set (JWKS) support."
+description = "JWT signing (JWS) and verification, with first class JWK and JWK Set (JWKS) support."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
