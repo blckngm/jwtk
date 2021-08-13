@@ -2,7 +2,7 @@
 //!
 //! Only public keys are really supported for now.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     ecdsa::{EcdsaAlgorithm, EcdsaPublicKey},
@@ -12,6 +12,7 @@ use crate::{
     url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, PublicKeyToJwk,
     Result, SigningKey, VerificationKey,
 };
+use openssl::hash::{hash, MessageDigest};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 // TODO: private key jwk.
@@ -103,6 +104,68 @@ impl Jwk {
 
         Err(Error::UnsupportedOrInvalidKey)
     }
+
+    /// Get key thumbprint (rfc 7638) with SHA-256.
+    pub fn get_thumbprint_sha256(&self) -> Result<[u8; 32]> {
+        let as_json = match &*self.kty {
+            "RSA" => {
+                let mut v = BTreeMap::new();
+                v.insert(
+                    "e",
+                    self.e.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                v.insert("kty", "RSA");
+                v.insert(
+                    "n",
+                    self.n.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                serde_json::to_string(&v)?
+            }
+            "EC" => {
+                let mut v = BTreeMap::new();
+                v.insert(
+                    "crv",
+                    self.crv.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                v.insert("kty", "EC");
+                v.insert(
+                    "x",
+                    self.x.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                v.insert(
+                    "y",
+                    self.y.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                serde_json::to_string(&v)?
+            }
+            "OKP" => {
+                let mut v = BTreeMap::new();
+                v.insert(
+                    "crv",
+                    self.crv.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                v.insert("kty", "OKP");
+                v.insert(
+                    "x",
+                    self.x.as_deref().ok_or(Error::UnsupportedOrInvalidKey)?,
+                );
+                serde_json::to_string(&v)?
+            }
+            _ => return Err(Error::UnsupportedOrInvalidKey),
+        };
+        let hash = hash(MessageDigest::sha256(), as_json.as_bytes())?;
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&hash[..]);
+        Ok(out)
+    }
+
+    /// Get key thumbprint with SHA-256, base64url-encoded.
+    pub fn get_thumbprint_sha256_base64(&self) -> Result<String> {
+        Ok(base64::encode_config(
+            self.get_thumbprint_sha256()?,
+            url_safe_trailing_bits(),
+        ))
+    }
 }
 
 /// JWK Set Representation.
@@ -183,6 +246,7 @@ impl JwkSetVerifier {
 /// A key associated with a key id (`kid`).
 ///
 /// When the key is used for signing, `kid` is automatically set.
+#[derive(Debug)]
 pub struct WithKid<S> {
     kid: String,
     inner: S,
@@ -191,6 +255,17 @@ pub struct WithKid<S> {
 impl<S> WithKid<S> {
     pub fn new(kid: String, inner: S) -> Self {
         Self { kid, inner }
+    }
+
+    /// Use key thumbprint as key id.
+    pub fn new_with_thumbprint_id(inner: S) -> Result<Self>
+    where
+        S: PublicKeyToJwk,
+    {
+        Ok(Self {
+            kid: inner.public_key_to_jwk()?.get_thumbprint_sha256_base64()?,
+            inner,
+        })
     }
 
     pub fn kid(&self) -> &str {
@@ -334,6 +409,8 @@ impl RemoteJwksVerifier {
 mod tests {
     use crate::{
         ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey},
+        eddsa::Ed25519PrivateKey,
+        rsa::RsaPrivateKey,
         sign,
     };
 
@@ -355,6 +432,21 @@ mod tests {
         }
         .to_verification_key()
         .is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_thumbprint() -> Result<()> {
+        RsaPrivateKey::generate(2048, RsaAlgorithm::RS256)?
+            .public_key_to_jwk()?
+            .get_thumbprint_sha256_base64()?;
+        EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?
+            .public_key_to_jwk()?
+            .get_thumbprint_sha256_base64()?;
+        Ed25519PrivateKey::generate()?
+            .public_key_to_jwk()?
+            .get_thumbprint_sha256_base64()?;
         Ok(())
     }
 

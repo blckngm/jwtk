@@ -53,9 +53,8 @@ async fn main() -> jwtk::Result<()> {
             _ => RsaAlgorithm::RS256,
         },
     )?;
+    let k = WithKid::new_with_thumbprint_id(k)?;
     println!("using key {:?}", k);
-
-    let k = WithKid::new("my key".into(), k);
 
     let k_public_jwk = k.public_key_to_jwk()?;
     let jwks = JwkSet {
