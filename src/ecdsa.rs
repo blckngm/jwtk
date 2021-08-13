@@ -55,7 +55,8 @@ impl EcdsaAlgorithm {
         }
     }
 
-    fn name(self) -> &'static str {
+    #[inline]
+    pub fn name(self) -> &'static str {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => "ES256",
@@ -65,7 +66,8 @@ impl EcdsaAlgorithm {
         }
     }
 
-    fn curve_name(self) -> &'static str {
+    #[inline]
+    pub fn curve_name(self) -> &'static str {
         use EcdsaAlgorithm::*;
         match self {
             ES256 => "P-256",
@@ -75,7 +77,8 @@ impl EcdsaAlgorithm {
         }
     }
 
-    pub(crate) fn from_curve_name(name: &str) -> Result<Self> {
+    #[inline]
+    pub fn from_curve_name(name: &str) -> Result<Self> {
         use EcdsaAlgorithm::*;
         Ok(match name {
             "P-256" => ES256,

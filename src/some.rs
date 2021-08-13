@@ -34,6 +34,48 @@ pub enum SomePublicKey {
     Rsa(RsaPublicKey),
 }
 
+impl From<Ed25519PrivateKey> for SomePrivateKey {
+    #[inline]
+    fn from(k: Ed25519PrivateKey) -> SomePrivateKey {
+        SomePrivateKey::Ed25519(k)
+    }
+}
+
+impl From<EcdsaPrivateKey> for SomePrivateKey {
+    #[inline]
+    fn from(k: EcdsaPrivateKey) -> SomePrivateKey {
+        SomePrivateKey::Ecdsa(k)
+    }
+}
+
+impl From<RsaPrivateKey> for SomePrivateKey {
+    #[inline]
+    fn from(k: RsaPrivateKey) -> SomePrivateKey {
+        SomePrivateKey::Rsa(k)
+    }
+}
+
+impl From<Ed25519PublicKey> for SomePublicKey {
+    #[inline]
+    fn from(k: Ed25519PublicKey) -> SomePublicKey {
+        SomePublicKey::Ed25519(k)
+    }
+}
+
+impl From<EcdsaPublicKey> for SomePublicKey {
+    #[inline]
+    fn from(k: EcdsaPublicKey) -> SomePublicKey {
+        SomePublicKey::Ecdsa(k)
+    }
+}
+
+impl From<RsaPublicKey> for SomePublicKey {
+    #[inline]
+    fn from(k: RsaPublicKey) -> SomePublicKey {
+        SomePublicKey::Rsa(k)
+    }
+}
+
 impl SomePrivateKey {
     /// Read an RSA/EC/Ed25519 private key from PEM.
     ///
