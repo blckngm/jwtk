@@ -5,15 +5,21 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    ecdsa::{EcdsaAlgorithm, EcdsaPublicKey},
-    eddsa::Ed25519PublicKey,
-    rsa::{RsaAlgorithm, RsaPublicKey},
+    ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey, EcdsaPublicKey},
+    eddsa::{Ed25519PrivateKey, Ed25519PublicKey},
+    rsa::{RsaAlgorithm, RsaPrivateKey, RsaPublicKey},
     some::SomePublicKey,
     url_safe_trailing_bits, verify, verify_only, Error, Header, HeaderAndClaims, PublicKeyToJwk,
-    Result, SigningKey, VerificationKey,
+    Result, SigningKey, SomePrivateKey, VerificationKey,
 };
-use openssl::hash::{hash, MessageDigest};
+use openssl::{
+    bn::BigNum,
+    hash::{hash, MessageDigest},
+    pkey::PKey,
+    rsa::{Rsa, RsaPrivateKeyBuilder},
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::Value;
 
 // TODO: private key jwk.
 
@@ -41,6 +47,22 @@ pub struct Jwk {
     pub x: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub y: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub d: Option<String>,
+
+    // RSA private key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub q: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dq: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qi: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub oth: Vec<Value>,
 }
 
 impl Jwk {
@@ -103,6 +125,83 @@ impl Jwk {
         }
 
         Err(Error::UnsupportedOrInvalidKey)
+    }
+
+    #[allow(clippy::many_single_char_names)]
+    pub fn to_signing_key(&self, rsa_fallback_algorithm: RsaAlgorithm) -> Result<SomePrivateKey> {
+        match &*self.kty {
+            "RSA" => {
+                let alg = if let Some(ref alg) = self.alg {
+                    RsaAlgorithm::from_name(alg)?
+                } else {
+                    rsa_fallback_algorithm
+                };
+                match (self.d.as_deref(), self.n.as_deref(), self.e.as_deref()) {
+                    (Some(d), Some(n), Some(e)) => {
+                        fn decode(x: &str) -> Result<BigNum> {
+                            Ok(BigNum::from_slice(&base64::decode_config(
+                                x,
+                                url_safe_trailing_bits(),
+                            )?)?)
+                        }
+                        let d = decode(d)?;
+                        let n = decode(n)?;
+                        let e = decode(e)?;
+                        match (
+                            self.p.as_deref(),
+                            self.q.as_deref(),
+                            self.dp.as_deref(),
+                            self.dq.as_deref(),
+                            self.qi.as_deref(),
+                            self.oth.is_empty(),
+                        ) {
+                            (None, None, None, None, None, true) => {
+                                let rsa = RsaPrivateKeyBuilder::new(n, e, d)?.build();
+                                let pkey = PKey::from_rsa(rsa)?;
+                                RsaPrivateKey::from_pkey_without_check(pkey, alg).map(Into::into)
+                            }
+                            (Some(p), Some(q), Some(dp), Some(dq), Some(qi), true) => {
+                                let p = decode(p)?;
+                                let q = decode(q)?;
+                                let dp = decode(dp)?;
+                                let dq = decode(dq)?;
+                                let qi = decode(qi)?;
+                                let rsa = Rsa::from_private_components(n, e, d, p, q, dp, dq, qi)?;
+                                let pkey = PKey::from_rsa(rsa)?;
+                                RsaPrivateKey::from_pkey(pkey, alg).map(Into::into)
+                            }
+                            _ => Err(Error::UnsupportedOrInvalidKey),
+                        }
+                    }
+                    _ => Err(Error::UnsupportedOrInvalidKey),
+                }
+            }
+            "EC" => {
+                match (
+                    self.crv.as_deref(),
+                    self.d.as_deref(),
+                    self.x.as_deref(),
+                    self.y.as_deref(),
+                ) {
+                    (Some(crv), Some(d), Some(x), Some(y)) => {
+                        let alg = EcdsaAlgorithm::from_curve_name(crv)?;
+                        let d = base64::decode_config(d, url_safe_trailing_bits())?;
+                        let x = base64::decode_config(x, url_safe_trailing_bits())?;
+                        let y = base64::decode_config(y, url_safe_trailing_bits())?;
+                        EcdsaPrivateKey::from_private_components(alg, &d, &x, &y).map(Into::into)
+                    }
+                    _ => Err(Error::UnsupportedOrInvalidKey),
+                }
+            }
+            "OKP" => match (self.crv.as_deref(), self.d.as_deref()) {
+                (Some("Ed25519"), Some(d)) => {
+                    let d = base64::decode_config(d, url_safe_trailing_bits())?;
+                    Ed25519PrivateKey::from_bytes(&d).map(Into::into)
+                }
+                _ => Err(Error::UnsupportedOrInvalidKey),
+            },
+            _ => Err(Error::UnsupportedOrInvalidKey),
+        }
     }
 
     /// Get key thumbprint (rfc 7638) with SHA-256.

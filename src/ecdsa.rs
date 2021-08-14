@@ -11,7 +11,8 @@ use openssl_sys::BN_bn2bin;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
+    VerificationKey,
 };
 
 #[non_exhaustive]
@@ -130,6 +131,30 @@ impl EcdsaPrivateKey {
         })
     }
 
+    pub fn from_private_components(
+        algorithm: EcdsaAlgorithm,
+        d: &[u8],
+        x: &[u8],
+        y: &[u8],
+    ) -> Result<Self> {
+        let group = EcGroup::from_curve_name(algorithm.curve())?;
+        let k = EcKey::from_private_components(
+            group.as_ref(),
+            BigNum::from_slice(d)?.as_ref(),
+            EcKey::from_public_key_affine_coordinates(
+                group.as_ref(),
+                BigNum::from_slice(x)?.as_ref(),
+                BigNum::from_slice(y)?.as_ref(),
+            )?
+            .public_key(),
+        )?;
+        k.check_key()?;
+        Ok(Self {
+            private_key: PKey::from_ec_key(k)?,
+            algorithm,
+        })
+    }
+
     pub fn from_pem(pem: &[u8]) -> Result<Self> {
         let pk = PKey::private_key_from_pem(pem)?;
         Self::from_pkey(pk)
@@ -158,6 +183,10 @@ impl EcdsaPrivateKey {
         pad_left(&mut y, self.algorithm.len() / 2);
         Ok((x, y))
     }
+
+    pub fn d(&self) -> Result<Vec<u8>> {
+        Ok(self.private_key.ec_key()?.private_key().to_vec())
+    }
 }
 
 impl PublicKeyToJwk for EcdsaPrivateKey {
@@ -167,6 +196,22 @@ impl PublicKeyToJwk for EcdsaPrivateKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
+            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            ..Default::default()
+        })
+    }
+}
+
+impl PrivateKeyToJwk for EcdsaPrivateKey {
+    fn private_key_to_jwk(&self) -> Result<Jwk> {
+        let (x, y) = self.coordinates()?;
+        let d = self.d()?;
+        Ok(Jwk {
+            kty: "EC".into(),
+            use_: Some("sig".into()),
+            crv: Some(self.algorithm.curve_name().into()),
+            d: Some(base64::encode_config(&d, url_safe_trailing_bits())),
             x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
             y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
             ..Default::default()
@@ -342,6 +387,8 @@ impl VerificationKey for EcdsaPublicKey {
 
 #[cfg(test)]
 mod tests {
+    use crate::{rsa::RsaAlgorithm, SomePrivateKey};
+
     use super::*;
 
     #[test]
@@ -379,6 +426,15 @@ mod tests {
         assert_eq!((&x, &y), (&x1, &y1));
 
         EcdsaPublicKey::from_coordinates(&x, &y, EcdsaAlgorithm::ES256)?;
+
+        if let SomePrivateKey::Ecdsa(k1) = k
+            .private_key_to_jwk()?
+            .to_signing_key(RsaAlgorithm::PS256)?
+        {
+            assert!(k.private_key.public_eq(k1.private_key.as_ref()));
+        } else {
+            panic!("expected ecdsa private key");
+        }
 
         k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?.to_verification_key()?;

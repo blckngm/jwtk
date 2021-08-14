@@ -402,6 +402,10 @@ pub trait PublicKeyToJwk {
     fn public_key_to_jwk(&self) -> Result<Jwk>;
 }
 
+pub trait PrivateKeyToJwk {
+    fn private_key_to_jwk(&self) -> Result<Jwk>;
+}
+
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {

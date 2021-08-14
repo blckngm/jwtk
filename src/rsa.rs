@@ -9,7 +9,8 @@ use openssl::{
 use smallvec::SmallVec;
 
 use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
+    VerificationKey,
 };
 
 /// RSA signature algorithms.
@@ -103,6 +104,20 @@ impl RsaPrivateKey {
         })
     }
 
+    pub(crate) fn from_pkey_without_check(
+        pkey: PKey<Private>,
+        algorithm: RsaAlgorithm,
+    ) -> Result<Self> {
+        if pkey.bits() < 2048 {
+            return Err(Error::UnsupportedOrInvalidKey);
+        }
+        Ok(Self {
+            private_key: pkey,
+            algorithm,
+            verify_any: false,
+        })
+    }
+
     pub fn from_pem(pem: &[u8], algorithm: RsaAlgorithm) -> Result<Self> {
         let pk = PKey::private_key_from_pem(pem)?;
         Self::from_pkey(pk, algorithm)
@@ -130,6 +145,42 @@ impl RsaPrivateKey {
 
     pub fn e(&self) -> Result<Vec<u8>> {
         Ok(self.private_key.rsa()?.e().to_vec())
+    }
+}
+
+impl PrivateKeyToJwk for RsaPrivateKey {
+    #[allow(clippy::many_single_char_names)]
+    fn private_key_to_jwk(&self) -> Result<Jwk> {
+        let n = self.n()?;
+        let e = self.e()?;
+        let rsa = self.private_key.rsa()?;
+        let d = rsa.d().to_vec();
+        let p = rsa.p().map(|p| p.to_vec());
+        let q = rsa.q().map(|q| q.to_vec());
+        let dp = rsa.dmp1().map(|dp| dp.to_vec());
+        let dq = rsa.dmq1().map(|dq| dq.to_vec());
+        let qi = rsa.iqmp().map(|qi| qi.to_vec());
+        fn encode(x: &[u8]) -> String {
+            base64::encode_config(x, url_safe_trailing_bits())
+        }
+        Ok(Jwk {
+            kty: "RSA".into(),
+            alg: if self.verify_any {
+                None
+            } else {
+                Some(self.algorithm.name().into())
+            },
+            use_: Some("sig".into()),
+            n: Some(encode(&n)),
+            e: Some(encode(&e)),
+            d: Some(encode(&d)),
+            p: p.map(|p| encode(&p)),
+            q: q.map(|q| encode(&q)),
+            dp: dp.map(|dp| encode(&dp)),
+            dq: dq.map(|dq| encode(&dq)),
+            qi: qi.map(|qi| encode(&qi)),
+            ..Default::default()
+        })
     }
 }
 
@@ -288,7 +339,10 @@ impl VerificationKey for RsaPublicKey {
 
 #[cfg(test)]
 mod tests {
-    use crate::ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey};
+    use crate::{
+        ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey},
+        SomePrivateKey,
+    };
 
     use super::*;
 
@@ -318,9 +372,36 @@ mod tests {
 
         assert_eq!(k.alg(), "PS384");
 
+        if let SomePrivateKey::Rsa(k1) = k
+            .private_key_to_jwk()?
+            .to_signing_key(RsaAlgorithm::RS512)?
+        {
+            assert!(k.private_key.public_eq(k1.private_key.as_ref()));
+        } else {
+            panic!("expected rsa private key");
+        }
+
         k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_private_key_from_jwk_n_e_d_only() -> Result<()> {
+        let k = RsaPrivateKey::generate(2048, RsaAlgorithm::PS256)?;
+        let mut jwk = k.private_key_to_jwk()?;
+        jwk.p = None;
+        jwk.q = None;
+        jwk.dp = None;
+        jwk.dq = None;
+        jwk.qi = None;
+        let k1 = jwk.to_signing_key(RsaAlgorithm::RS256)?;
+        let sig = k1.sign(b"msg")?;
+        k.verify(b"msg", &sig, "PS256")?;
+        k1.verify(b"msg", &sig, "PS256")?;
+        let sig = k.sign(b"msg")?;
+        k1.verify(b"msg", &sig, "PS256")?;
         Ok(())
     }
 

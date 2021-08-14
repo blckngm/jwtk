@@ -9,7 +9,8 @@ use openssl::{
 use smallvec::SmallVec;
 
 use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
+    VerificationKey,
 };
 
 #[derive(Debug)]
@@ -100,6 +101,20 @@ impl PublicKeyToJwk for Ed25519PrivateKey {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
             x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
+            ..Jwk::default()
+        })
+    }
+}
+
+impl PrivateKeyToJwk for Ed25519PrivateKey {
+    fn private_key_to_jwk(&self) -> Result<Jwk> {
+        let d = self.private_key_bytes()?;
+        let x: [u8; 32] = self.public_key_bytes()?;
+        Ok(Jwk {
+            kty: "OKP".into(),
+            crv: Some("Ed25519".into()),
+            d: Some(base64::encode_config(&d, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
             ..Jwk::default()
         })
     }
@@ -225,6 +240,8 @@ mod tests {
         nid::Nid,
     };
 
+    use crate::{rsa::RsaAlgorithm, SomePrivateKey};
+
     use super::*;
 
     #[test]
@@ -256,6 +273,15 @@ mod tests {
         let pk_pem1 = pk.to_pem()?;
 
         assert_eq!(pk_pem, pk_pem1);
+
+        if let SomePrivateKey::Ed25519(k1) = k
+            .private_key_to_jwk()?
+            .to_signing_key(RsaAlgorithm::PS256)?
+        {
+            assert!(k.private_key.public_eq(k1.private_key.as_ref()));
+        } else {
+            panic!("expected ed25519 private key");
+        }
 
         k.public_key_to_jwk()?.to_verification_key()?;
         pk.public_key_to_jwk()?.to_verification_key()?;

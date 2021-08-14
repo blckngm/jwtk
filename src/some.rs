@@ -7,7 +7,7 @@ use crate::{
     eddsa::{Ed25519PrivateKey, Ed25519PublicKey},
     jwk::Jwk,
     rsa::{RsaAlgorithm, RsaPrivateKey, RsaPublicKey},
-    Error, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey, VerificationKey,
 };
 
 /// An RSA, EC or Ed25519 private key.
@@ -126,6 +126,16 @@ impl PublicKeyToJwk for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.public_key_to_jwk(),
             SomePrivateKey::Ecdsa(ec) => ec.public_key_to_jwk(),
             SomePrivateKey::Rsa(rsa) => rsa.public_key_to_jwk(),
+        }
+    }
+}
+
+impl PrivateKeyToJwk for SomePrivateKey {
+    fn private_key_to_jwk(&self) -> Result<Jwk> {
+        match self {
+            SomePrivateKey::Ed25519(ed) => ed.private_key_to_jwk(),
+            SomePrivateKey::Ecdsa(ec) => ec.private_key_to_jwk(),
+            SomePrivateKey::Rsa(rsa) => rsa.private_key_to_jwk(),
         }
     }
 }
