@@ -61,7 +61,7 @@ pub struct Jwk {
     pub dq: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qi: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub oth: Vec<Value>,
 }
 
