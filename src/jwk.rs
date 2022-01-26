@@ -61,8 +61,8 @@ pub struct Jwk {
     pub dq: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qi: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub oth: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oth: Option<Vec<Value>>,
 }
 
 impl Jwk {
@@ -153,14 +153,14 @@ impl Jwk {
                             self.dp.as_deref(),
                             self.dq.as_deref(),
                             self.qi.as_deref(),
-                            self.oth.is_empty(),
+                            self.oth.as_deref(),
                         ) {
-                            (None, None, None, None, None, true) => {
+                            (None, None, None, None, None, None) => {
                                 let rsa = RsaPrivateKeyBuilder::new(n, e, d)?.build();
                                 let pkey = PKey::from_rsa(rsa)?;
                                 RsaPrivateKey::from_pkey_without_check(pkey, alg).map(Into::into)
                             }
-                            (Some(p), Some(q), Some(dp), Some(dq), Some(qi), true) => {
+                            (Some(p), Some(q), Some(dp), Some(dq), Some(qi), None) => {
                                 let p = decode(p)?;
                                 let q = decode(q)?;
                                 let dp = decode(dp)?;
