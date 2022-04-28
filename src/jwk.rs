@@ -2,7 +2,10 @@
 //!
 //! Only public keys are really supported for now.
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+};
 
 use crate::{
     ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey, EcdsaPublicKey},
@@ -310,17 +313,13 @@ impl JwkSetVerifier {
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
-        let mut parts = token.split('.');
+        let header: Header = token
+            .split('.')
+            .next()
+            .ok_or(Error::InvalidToken)?
+            .try_into()?;
 
-        let mut header = parts.next().ok_or(Error::InvalidToken)?.as_bytes();
-
-        let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
-        let header: Header = serde_json::from_reader(header_r)?;
-
-        let kid = header.kid.as_deref().ok_or(Error::NoKid)?;
-        let k = self.find(kid).ok_or(Error::NoKey)?;
-
-        verify(token, k)
+        self.find_and_verify(header.kid, token, verify)
     }
 
     /// Decode and verify token with keys from this JWK set. Won't check `exp` and `nbf`.
@@ -328,17 +327,34 @@ impl JwkSetVerifier {
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
-        let mut parts = token.split('.');
+        let header: Header = token
+            .split('.')
+            .next()
+            .ok_or(Error::InvalidToken)?
+            .try_into()?;
 
-        let mut header = parts.next().ok_or(Error::InvalidToken)?.as_bytes();
+        self.find_and_verify(header.kid, token, verify_only)
+    }
 
-        let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
-        let header: Header = serde_json::from_reader(header_r)?;
-
-        let kid = header.kid.as_deref().ok_or(Error::NoKid)?;
-        let k = self.find(kid).ok_or(Error::NoKey)?;
-
-        verify_only(token, k)
+    pub fn find_and_verify<ExtraClaims: DeserializeOwned>(
+        &self,
+        kid: Option<String>,
+        token: &str,
+        verifier: fn(&str, &dyn VerificationKey) -> Result<HeaderAndClaims<ExtraClaims>>,
+    ) -> Result<HeaderAndClaims<ExtraClaims>> {
+        if let Some(kid) = kid {
+            let k = self.find(&kid).ok_or(Error::NoKey)?;
+            verifier(token, k)
+        } else if let Some(res) = self
+            .keys
+            .iter()
+            .map(|(_, key)| verify(token, key))
+            .find_map(|res| res.ok())
+        {
+            Ok(res)
+        } else {
+            Err(Error::NoKey)
+        }
     }
 }
 
@@ -562,14 +578,29 @@ mod tests {
         let jwks = JwkSet { keys: vec![k_jwk] };
         let verifier = jwks.verifier();
 
-        let token = sign(
-            HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }).set_kid("my key"),
-            &k,
-        )?;
+        // jwt with kid
+        {
+            let token = sign(
+                HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }).set_kid("my key"),
+                &k,
+            )?;
 
-        verifier.verify_only::<MyClaim>(&token)?;
-        let verified = verifier.verify::<MyClaim>(&token)?;
-        assert_eq!(verified.claims.extra.foo, "bar");
+            verifier.verify_only::<MyClaim>(&token)?;
+            let verified = verifier.verify::<MyClaim>(&token)?;
+            assert_eq!(verified.claims.extra.foo, "bar");
+        }
+
+        // jwt without kid
+        {
+            let token = sign(
+                &mut HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }),
+                &k,
+            )?;
+
+            verifier.verify_only::<MyClaim>(&token)?;
+            let verified = verifier.verify::<MyClaim>(&token)?;
+            assert_eq!(verified.claims.extra.foo, "bar");
+        }
 
         Ok(())
     }
