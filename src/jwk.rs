@@ -310,23 +310,25 @@ impl JwkSetVerifier {
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
-        let mut parts = token.split('.');
-
-        let mut header = parts.next().ok_or(Error::InvalidToken)?.as_bytes();
-
-        let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
-        let header: Header = serde_json::from_reader(header_r)?;
-
-        let kid = header.kid.as_deref().ok_or(Error::NoKid)?;
-        let k = self.find(kid).ok_or(Error::NoKey)?;
-
-        verify(token, k)
+        self.find_and_verify(token, verify, true)
     }
 
     /// Decode and verify token with keys from this JWK set. Won't check `exp` and `nbf`.
     pub fn verify_only<ExtraClaims: DeserializeOwned>(
         &self,
         token: &str,
+    ) -> Result<HeaderAndClaims<ExtraClaims>> {
+        self.find_and_verify(token, verify_only, true)
+    }
+
+    /// Find and verify token with keys from this JWK set.
+    ///
+    /// restrict_kid is true will only match keys with the same `kid`.
+    pub fn find_and_verify<ExtraClaims: DeserializeOwned>(
+        &self,
+        token: &str,
+        verifier: fn(&str, &dyn VerificationKey) -> Result<HeaderAndClaims<ExtraClaims>>,
+        restrict_kid: bool,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
         let mut parts = token.split('.');
 
@@ -335,10 +337,23 @@ impl JwkSetVerifier {
         let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
         let header: Header = serde_json::from_reader(header_r)?;
 
-        let kid = header.kid.as_deref().ok_or(Error::NoKid)?;
-        let k = self.find(kid).ok_or(Error::NoKey)?;
-
-        verify_only(token, k)
+        if let Some(kid) = header.kid {
+            let k = self.find(&kid).ok_or(Error::NoKey)?;
+            verifier(token, k)
+        } else if !restrict_kid {
+            if let Some(res) = self
+                .keys
+                .iter()
+                .map(|(_, key)| verify(token, key))
+                .find_map(|res| res.ok())
+            {
+                Ok(res)
+            } else {
+                Err(Error::NoKey)
+            }
+        } else {
+            Err(Error::NoKey)
+        }
     }
 }
 
@@ -502,6 +517,16 @@ impl RemoteJwksVerifier {
         let v = self.get_verifier().await?;
         v.verify_only(token)
     }
+
+    pub async fn find_and_verify<E: DeserializeOwned>(
+        &self,
+        token: &str,
+        verifier: fn(&str, &dyn VerificationKey) -> Result<HeaderAndClaims<E>>,
+        restrict_kid: bool,
+    ) -> Result<HeaderAndClaims<E>> {
+        let v = self.get_verifier().await?;
+        v.find_and_verify(token, verifier, restrict_kid)
+    }
 }
 
 #[cfg(test)]
@@ -557,19 +582,65 @@ mod tests {
     #[test]
     fn test_jwks_verify() -> Result<()> {
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES512)?;
-        let k = WithKid::new("my key".into(), k);
-        let k_jwk = k.public_key_to_jwk()?;
+        let kk = WithKid::new("my key".into(), k.clone());
+        let k_jwk = kk.public_key_to_jwk()?;
         let jwks = JwkSet { keys: vec![k_jwk] };
         let verifier = jwks.verifier();
 
-        let token = sign(
-            HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }).set_kid("my key"),
-            &k,
-        )?;
+        // jwt with kid
+        {
+            let mut jwt = HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() });
+            jwt.set_kid("my key");
+            let token = sign(&mut jwt, &k)?;
 
-        verifier.verify_only::<MyClaim>(&token)?;
-        let verified = verifier.verify::<MyClaim>(&token)?;
-        assert_eq!(verified.claims.extra.foo, "bar");
+            verifier.verify_only::<MyClaim>(&token)?;
+            let verified = verifier.verify::<MyClaim>(&token)?;
+            assert_eq!(verified.claims.extra.foo, "bar");
+        }
+
+        // jwt with not exist kid
+        {
+            let mut jwt = HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() });
+            jwt.set_kid("my key2");
+            let token = sign(&mut jwt, &k)?;
+
+            let res = verifier.verify_only::<MyClaim>(&token);
+            assert!(res.is_err());
+        }
+
+        // jwt with override kid
+        {
+            let mut jwt = HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() });
+            jwt.set_kid("my key2");
+            let token = sign(&mut jwt, &kk)?;
+
+            verifier.verify_only::<MyClaim>(&token)?;
+            let verified = verifier.verify::<MyClaim>(&token)?;
+            assert_eq!(verified.claims.extra.foo, "bar");
+        }
+
+        // jwt without kid
+        {
+            let token = sign(
+                &mut HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }),
+                &k,
+            )?;
+
+            let res = verifier.verify_only::<MyClaim>(&token);
+            assert!(res.is_err());
+        }
+
+        // jwt without kid and not restrict
+        {
+            let token = sign(
+                &mut HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }),
+                &k,
+            )?;
+
+            verifier.find_and_verify::<MyClaim>(&token, verify, false)?;
+            let verified = verifier.find_and_verify::<MyClaim>(&token, verify_only, false)?;
+            assert_eq!(verified.claims.extra.foo, "bar");
+        }
 
         Ok(())
     }

@@ -13,7 +13,7 @@ use crate::{
     VerificationKey,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Ed25519PrivateKey {
     private_key: PKey<Private>,
 }
