@@ -407,14 +407,14 @@ mod tests {
 
     #[test]
     fn sign_verify() -> Result<()> {
-        for alg in std::array::IntoIter::new([
+        for alg in [
             RsaAlgorithm::RS256,
             RsaAlgorithm::RS384,
             RsaAlgorithm::RS512,
             RsaAlgorithm::PS256,
             RsaAlgorithm::PS384,
             RsaAlgorithm::PS512,
-        ]) {
+        ] {
             let k = RsaPrivateKey::generate(2048, alg)?;
             let pk = RsaPublicKey::from_pem(k.public_key_to_pem()?.as_bytes(), None)?;
             let sig = k.sign(b"...")?;

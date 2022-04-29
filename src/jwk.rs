@@ -277,6 +277,7 @@ impl JwkSet {
     pub fn verifier(&self) -> JwkSetVerifier {
         let mut prepared = JwkSetVerifier {
             keys: HashMap::new(),
+            require_kid: true,
         };
         for k in self.keys.iter() {
             if let Some(ref kid) = k.kid {
@@ -292,9 +293,16 @@ impl JwkSet {
 /// Jwk set parsed and converted, ready to verify tokens.
 pub struct JwkSetVerifier {
     keys: HashMap<String, SomePublicKey>,
+    require_kid: bool,
 }
 
 impl JwkSetVerifier {
+    /// If called with `false`, subsequent `verify` and `verify_only` calls will
+    /// try all keys from the key set if a `kid` is not specified in the token.
+    pub fn set_require_kid(&mut self, required: bool) {
+        self.require_kid = required;
+    }
+
     pub fn find(&self, kid: &str) -> Option<&SomePublicKey> {
         if let Some(vk) = self.keys.get(kid) {
             Some(vk)
@@ -310,7 +318,7 @@ impl JwkSetVerifier {
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
-        self.find_and_verify(token, verify, true)
+        self.find_and_verify(token, verify)
     }
 
     /// Decode and verify token with keys from this JWK set. Won't check `exp` and `nbf`.
@@ -318,17 +326,16 @@ impl JwkSetVerifier {
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
-        self.find_and_verify(token, verify_only, true)
+        self.find_and_verify(token, verify_only)
     }
 
     /// Find and verify token with keys from this JWK set.
     ///
     /// restrict_kid is true will only match keys with the same `kid`.
-    pub fn find_and_verify<ExtraClaims: DeserializeOwned>(
+    fn find_and_verify<ExtraClaims: DeserializeOwned>(
         &self,
         token: &str,
         verifier: fn(&str, &dyn VerificationKey) -> Result<HeaderAndClaims<ExtraClaims>>,
-        restrict_kid: bool,
     ) -> Result<HeaderAndClaims<ExtraClaims>> {
         let mut parts = token.split('.');
 
@@ -340,7 +347,7 @@ impl JwkSetVerifier {
         if let Some(kid) = header.kid {
             let k = self.find(&kid).ok_or(Error::NoKey)?;
             verifier(token, k)
-        } else if !restrict_kid {
+        } else if !self.require_kid {
             if let Some(res) = self
                 .keys
                 .iter()
@@ -444,6 +451,7 @@ pub struct RemoteJwksVerifier {
     client: reqwest::Client,
     cache_duration: std::time::Duration,
     cache: tokio::sync::RwLock<Option<JWKSCache>>,
+    require_kid: bool,
 }
 
 #[cfg(feature = "remote-jwks")]
@@ -458,6 +466,16 @@ impl RemoteJwksVerifier {
             client: client.unwrap_or_default(),
             cache_duration,
             cache: tokio::sync::RwLock::new(None),
+            require_kid: true,
+        }
+    }
+
+    /// If called with `false`, subsequent `verify` and `verify_only` calls will
+    /// try all keys from the key set if a `kid` is not specified in the token.
+    pub fn set_require_kid(&mut self, required: bool) {
+        self.require_kid = required;
+        if let Some(ref mut v) = self.cache.get_mut() {
+            v.jwks.require_kid = required;
         }
     }
 
@@ -496,7 +514,11 @@ impl RemoteJwksVerifier {
         let jwks: JwkSet = response.json().await?;
 
         *cache = Some(JWKSCache {
-            jwks: jwks.verifier(),
+            jwks: {
+                let mut v = jwks.verifier();
+                v.require_kid = self.require_kid;
+                v
+            },
             valid_until: std::time::Instant::now() + self.cache_duration,
         });
 
@@ -516,16 +538,6 @@ impl RemoteJwksVerifier {
     ) -> Result<HeaderAndClaims<E>> {
         let v = self.get_verifier().await?;
         v.verify_only(token)
-    }
-
-    pub async fn find_and_verify<E: DeserializeOwned>(
-        &self,
-        token: &str,
-        verifier: fn(&str, &dyn VerificationKey) -> Result<HeaderAndClaims<E>>,
-        restrict_kid: bool,
-    ) -> Result<HeaderAndClaims<E>> {
-        let v = self.get_verifier().await?;
-        v.find_and_verify(token, verifier, restrict_kid)
     }
 }
 
@@ -585,7 +597,7 @@ mod tests {
         let kk = WithKid::new("my key".into(), k.clone());
         let k_jwk = kk.public_key_to_jwk()?;
         let jwks = JwkSet { keys: vec![k_jwk] };
-        let verifier = jwks.verifier();
+        let mut verifier = jwks.verifier();
 
         // jwt with kid
         {
@@ -630,15 +642,16 @@ mod tests {
             assert!(res.is_err());
         }
 
-        // jwt without kid and not restrict
+        // jwt without kid and verifier does not require one.
         {
             let token = sign(
                 &mut HeaderAndClaims::with_claims(MyClaim { foo: "bar".into() }),
                 &k,
             )?;
 
-            verifier.find_and_verify::<MyClaim>(&token, verify, false)?;
-            let verified = verifier.find_and_verify::<MyClaim>(&token, verify_only, false)?;
+            verifier.set_require_kid(false);
+            verifier.verify::<MyClaim>(&token)?;
+            let verified = verifier.verify_only::<MyClaim>(&token)?;
             assert_eq!(verified.claims.extra.foo, "bar");
         }
 

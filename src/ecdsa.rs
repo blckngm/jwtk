@@ -444,12 +444,12 @@ mod tests {
 
     #[test]
     fn sign_verify() -> Result<()> {
-        for alg in std::array::IntoIter::new([
+        for alg in [
             EcdsaAlgorithm::ES256,
             EcdsaAlgorithm::ES256K,
             EcdsaAlgorithm::ES384,
             EcdsaAlgorithm::ES512,
-        ]) {
+        ] {
             let k = EcdsaPrivateKey::generate(alg)?;
             let (x, y) = k.coordinates()?;
             let pk = EcdsaPublicKey::from_coordinates(&x, &y, alg)?;

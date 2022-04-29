@@ -117,11 +117,11 @@ mod tests {
 
     #[test]
     fn sign_and_verify() -> Result<()> {
-        for alg in std::array::IntoIter::new([
+        for alg in [
             HmacAlgorithm::HS256,
             HmacAlgorithm::HS384,
             HmacAlgorithm::HS512,
-        ]) {
+        ] {
             let k = HmacKey::from_bytes(b"key", alg);
             let sig = k.sign(b"...")?;
             assert!(k.verify(b"...", &sig, alg.name()).is_ok());
