@@ -101,7 +101,7 @@ impl EcdsaAlgorithm {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EcdsaPrivateKey {
     private_key: PKey<Private>,
     algorithm: EcdsaAlgorithm,
