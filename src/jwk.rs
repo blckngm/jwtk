@@ -351,7 +351,7 @@ impl JwkSetVerifier {
             if let Some(res) = self
                 .keys
                 .iter()
-                .map(|(_, key)| verify(token, key))
+                .map(|(_, key)| verifier(token, key))
                 .find_map(|res| res.ok())
             {
                 Ok(res)
