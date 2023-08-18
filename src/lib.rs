@@ -10,7 +10,7 @@ use std::{
 use openssl::error::ErrorStack;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
-use serde_with::serde_as;
+use serde_with::{serde_as, skip_serializing_none};
 use smallvec::SmallVec;
 
 use jwk::Jwk;
@@ -69,6 +69,7 @@ impl<T> Default for OneOrMany<T> {
 
 /// JWT Claims.
 #[serde_as]
+#[skip_serializing_none]
 #[non_exhaustive]
 #[derive(Debug, Serialize, Default, Deserialize)]
 pub struct Claims<ExtraClaims> {
@@ -79,13 +80,10 @@ pub struct Claims<ExtraClaims> {
     #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
     pub iat: Option<Duration>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     #[serde(default, skip_serializing_if = "OneOrMany::is_empty")]
     pub aud: OneOrMany<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
 
     #[serde(flatten)]
@@ -210,9 +208,8 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     pub fn set_exp_from_now(&mut self, dur: Duration) -> &mut Self {
         let t = (SystemTime::now() + dur)
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        self.claims.exp = Some(Duration::from_secs(t));
+            .unwrap();
+        self.claims.exp = Some(t);
         self
     }
 
@@ -221,9 +218,8 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     pub fn set_nbf_from_now(&mut self, dur: Duration) -> &mut Self {
         let t = (SystemTime::now() + dur)
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        self.claims.nbf = Some(Duration::from_secs(t));
+            .unwrap();
+        self.claims.nbf = Some(t);
         self
     }
 }
@@ -497,8 +493,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use base64::{CharacterSet, Config};
-
     use crate::ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey};
 
     use super::*;
@@ -540,7 +534,7 @@ mod tests {
     fn claim_deserialization() {
         let mut json = r#"eyJpYXQiOjEuNjkyMTkwMTI1RTksImV4cCI6MS42OTIxOTM3MjVFOSwiYW50aUNzcmZUb2tlbiI6bnVsbCwic3ViIjoiYTM5ZmZjNWUtNjc5ZC00YjAzLWI5YmYtYTliZjEzNDk4NGYzIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozOTk5L2F1dGgiLCJzZXNzaW9uSGFuZGxlIjoiNTAyMWQ2MTQtYzFmNi00ZTZkLWI1NjktZGQxN2Q0N2EyOWI0IiwicGFyZW50UmVmcmVzaFRva2VuSGFzaDEiOm51bGwsInJlZnJlc2hUb2tlbkhhc2gxIjoiNTZiMjcxZDcxNGRlMzg3M2UwMmIyZjAyYTJiZDcyYWJjZDIyZDM0NGZlZjE2YTJkMWJjYmM1NGU2YWUxN2M3OCJ9"#.as_bytes();
 
-        let r = base64::read::DecoderReader::new(&mut json, Config::new(CharacterSet::ImapMutf7, true));
+        let r = base64::read::DecoderReader::new(&mut json, url_safe_trailing_bits());
 
         let claims: Claims<Value> = serde_json::from_reader(r).unwrap();
         assert_eq!(claims.iat, Some(Duration::from_secs(1692190125)));
