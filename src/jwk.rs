@@ -350,8 +350,8 @@ impl JwkSetVerifier {
         } else if !self.require_kid {
             if let Some(res) = self
                 .keys
-                .iter()
-                .map(|(_, key)| verifier(token, key))
+                .values()
+                .map(|key| verifier(token, key))
                 .find_map(|res| res.ok())
             {
                 Ok(res)

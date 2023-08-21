@@ -196,8 +196,8 @@ impl PublicKeyToJwk for EcdsaPrivateKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
             ..Default::default()
         })
     }
@@ -211,9 +211,9 @@ impl PrivateKeyToJwk for EcdsaPrivateKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            d: Some(base64::encode_config(&d, url_safe_trailing_bits())),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            d: Some(base64::encode_config(d, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
             ..Default::default()
         })
     }
@@ -307,8 +307,8 @@ impl PublicKeyToJwk for EcdsaPublicKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(&y, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
+            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
             ..Default::default()
         })
     }
