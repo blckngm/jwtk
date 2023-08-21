@@ -1,4 +1,21 @@
 #![doc = include_str!("../README.md")]
+
+use std::{
+    borrow::Cow,
+    fmt,
+    io::Write,
+    string::FromUtf8Error,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use openssl::error::ErrorStack;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::{Map, Value};
+use serde_with::{serde_as, skip_serializing_none};
+use smallvec::SmallVec;
+
+use jwk::Jwk;
+pub use some::*;
+
 mod some;
 
 pub mod hmac;
@@ -10,20 +27,6 @@ pub mod ecdsa;
 pub mod rsa;
 
 pub mod jwk;
-
-use std::{
-    borrow::Cow,
-    fmt,
-    io::Write,
-    string::FromUtf8Error,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
-use jwk::Jwk;
-use openssl::error::ErrorStack;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{Map, Value};
-use smallvec::SmallVec;
 
 /// JWT header.
 #[non_exhaustive]
@@ -65,23 +68,22 @@ impl<T> Default for OneOrMany<T> {
 }
 
 /// JWT Claims.
+#[serde_as]
+#[skip_serializing_none]
 #[non_exhaustive]
 #[derive(Debug, Serialize, Default, Deserialize)]
 pub struct Claims<ExtraClaims> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exp: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nbf: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub iat: Option<u64>,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
+    pub exp: Option<Duration>,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
+    pub nbf: Option<Duration>,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
+    pub iat: Option<Duration>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     #[serde(default, skip_serializing_if = "OneOrMany::is_empty")]
     pub aud: OneOrMany<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
 
     #[serde(flatten)]
@@ -189,8 +191,7 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
         self.claims.iat = Some(
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                .unwrap(),
         );
         self
     }
@@ -198,7 +199,7 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     /// Check that `iat` is present and is later than `t`.
     pub fn iat_is_later_than(&self, t: SystemTime) -> bool {
         self.claims.iat.map_or(false, |iat| {
-            iat > t.duration_since(UNIX_EPOCH).unwrap().as_secs()
+            iat > t.duration_since(UNIX_EPOCH).unwrap()
         })
     }
 
@@ -207,8 +208,7 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     pub fn set_exp_from_now(&mut self, dur: Duration) -> &mut Self {
         let t = (SystemTime::now() + dur)
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+            .unwrap();
         self.claims.exp = Some(t);
         self
     }
@@ -218,8 +218,7 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     pub fn set_nbf_from_now(&mut self, dur: Duration) -> &mut Self {
         let t = (SystemTime::now() + dur)
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+            .unwrap();
         self.claims.nbf = Some(t);
         self
     }
@@ -237,8 +236,6 @@ impl HeaderAndClaims<Map<String, Value>> {
 fn url_safe_trailing_bits() -> base64::Config {
     base64::URL_SAFE_NO_PAD.decode_allow_trailing_bits(true)
 }
-
-pub use some::*;
 
 /// Encode and sign this header and claims with the signing key.
 ///
@@ -286,13 +283,13 @@ pub fn verify<ExtraClaims: DeserializeOwned>(
     // Check exp and nbf.
     let now = SystemTime::now();
     if let Some(exp) = claims.claims.exp {
-        let exp = SystemTime::UNIX_EPOCH + Duration::from_secs(exp);
+        let exp = SystemTime::UNIX_EPOCH + exp;
         if now > exp {
             return Err(Error::Expired);
         }
     }
     if let Some(nbf) = claims.claims.nbf {
-        let nbf = SystemTime::UNIX_EPOCH + Duration::from_secs(nbf);
+        let nbf = SystemTime::UNIX_EPOCH + nbf;
         if now < nbf {
             return Err(Error::Before);
         }
@@ -531,5 +528,16 @@ mod tests {
         assert!(verify_only::<Map<String, Value>>(&token, &k).is_ok());
 
         Ok(())
+    }
+
+    #[test]
+    fn claim_deserialization() {
+        let mut json = r#"eyJpYXQiOjEuNjkyMTkwMTI1RTksImV4cCI6MS42OTIxOTM3MjVFOSwiYW50aUNzcmZUb2tlbiI6bnVsbCwic3ViIjoiYTM5ZmZjNWUtNjc5ZC00YjAzLWI5YmYtYTliZjEzNDk4NGYzIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozOTk5L2F1dGgiLCJzZXNzaW9uSGFuZGxlIjoiNTAyMWQ2MTQtYzFmNi00ZTZkLWI1NjktZGQxN2Q0N2EyOWI0IiwicGFyZW50UmVmcmVzaFRva2VuSGFzaDEiOm51bGwsInJlZnJlc2hUb2tlbkhhc2gxIjoiNTZiMjcxZDcxNGRlMzg3M2UwMmIyZjAyYTJiZDcyYWJjZDIyZDM0NGZlZjE2YTJkMWJjYmM1NGU2YWUxN2M3OCJ9"#.as_bytes();
+
+        let r = base64::read::DecoderReader::new(&mut json, url_safe_trailing_bits());
+
+        let claims: Claims<Value> = serde_json::from_reader(r).unwrap();
+        assert_eq!(claims.iat, Some(Duration::from_secs(1692190125)));
+        assert_eq!(claims.exp, Some(Duration::from_secs(1692193725)));
     }
 }
