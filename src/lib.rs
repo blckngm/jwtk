@@ -1,5 +1,10 @@
 #![doc = include_str!("../README.md")]
 
+use openssl::error::ErrorStack;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::{Map, Value};
+use serde_with::{serde_as, skip_serializing_none};
+use smallvec::SmallVec;
 use std::{
     borrow::Cow,
     fmt,
@@ -7,11 +12,6 @@ use std::{
     string::FromUtf8Error,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use openssl::error::ErrorStack;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{Map, Value};
-use serde_with::{serde_as, skip_serializing_none};
-use smallvec::SmallVec;
 
 use jwk::Jwk;
 pub use some::*;
@@ -198,9 +198,9 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
 
     /// Check that `iat` is present and is later than `t`.
     pub fn iat_is_later_than(&self, t: SystemTime) -> bool {
-        self.claims.iat.map_or(false, |iat| {
-            iat > t.duration_since(UNIX_EPOCH).unwrap()
-        })
+        self.claims
+            .iat
+            .map_or(false, |iat| iat > t.duration_since(UNIX_EPOCH).unwrap())
     }
 
     /// Set token expiration time (`exp`) to some time after the current time,

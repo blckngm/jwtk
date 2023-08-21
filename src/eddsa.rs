@@ -100,7 +100,7 @@ impl PublicKeyToJwk for Ed25519PrivateKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(bytes, url_safe_trailing_bits())),
             ..Jwk::default()
         })
     }
@@ -113,8 +113,8 @@ impl PrivateKeyToJwk for Ed25519PrivateKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            d: Some(base64::encode_config(&d, url_safe_trailing_bits())),
-            x: Some(base64::encode_config(&x, url_safe_trailing_bits())),
+            d: Some(base64::encode_config(d, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
             ..Jwk::default()
         })
     }
@@ -181,7 +181,7 @@ impl PublicKeyToJwk for Ed25519PublicKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(&bytes, url_safe_trailing_bits())),
+            x: Some(base64::encode_config(bytes, url_safe_trailing_bits())),
             ..Jwk::default()
         })
     }
