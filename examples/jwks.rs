@@ -1,34 +1,35 @@
 //! A JWKS server and token issuer.
 //!
 //! Reads private key fro `key.pem` (supports RSA, EC and Ed25519 keys). For
-//! RSA, you can set the RSA_ALGO env var to use algorithms other than RS256.
+//! RSA, you can set the `RSA_ALGO` env var to use algorithms other than RS256.
 //!
 //! Jwks will be available at http://127.0.0.1:3000/jwks
 //!
 //! Tokens will be issued at http://127.0.0.1:3000/token
 
 use axum::{
-    prelude::*,
+    extract::State,
     response::{IntoResponse, Json},
-    AddExtensionLayer,
+    routing::get,
+    Router,
 };
 use jwtk::{
     jwk::{JwkSet, WithKid},
     rsa::RsaAlgorithm,
     sign, HeaderAndClaims, PublicKeyToJwk, SomePrivateKey,
 };
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-struct State {
+struct AppState {
     k: WithKid<SomePrivateKey>,
     jwks: JwkSet,
 }
 
-async fn jwks_handler(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
+async fn jwks_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     Json(&state.jwks).into_response()
 }
 
-async fn token_handler(state: extract::Extension<Arc<State>>) -> impl IntoResponse {
+async fn token_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     let mut token = HeaderAndClaims::new_dynamic();
     token
         .set_iss("me")
@@ -61,16 +62,15 @@ async fn main() -> jwtk::Result<()> {
         keys: vec![k_public_jwk],
     };
 
-    let state = Arc::new(State { k, jwks });
+    let state = Arc::new(AppState { k, jwks });
 
-    let app = route("/jwks", get(jwks_handler))
+    let app = Router::new()
+        .route("/jwks", get(jwks_handler))
         .route("/token", get(token_handler))
-        .layer(AddExtensionLayer::new(state));
+        .with_state(state);
 
-    axum::Server::bind(&(Ipv4Addr::from(0), 3000).into())
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 
     Ok(())
 }
