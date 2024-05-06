@@ -1,11 +1,10 @@
 #[cfg(feature = "remote-jwks")]
 #[tokio::main]
 async fn main() -> jwtk::Result<()> {
-    use std::time::Duration;
-
     use jwtk::jwk::RemoteJwksVerifier;
     use serde::Deserialize;
     use serde_json::{Map, Value};
+    use std::time::Duration;
 
     #[derive(Deserialize)]
     struct Token {

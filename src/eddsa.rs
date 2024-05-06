@@ -1,5 +1,8 @@
-use std::ptr;
-
+use crate::{
+    jwk::Jwk, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    URL_SAFE_TRAILING_BITS,
+};
+use base64::Engine as _;
 use foreign_types::ForeignType;
 use openssl::{
     error::ErrorStack,
@@ -7,11 +10,7 @@ use openssl::{
     sign::{Signer, Verifier},
 };
 use smallvec::SmallVec;
-
-use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
-    VerificationKey,
-};
+use std::ptr;
 
 #[derive(Debug, Clone)]
 pub struct Ed25519PrivateKey {
@@ -100,7 +99,7 @@ impl PublicKeyToJwk for Ed25519PrivateKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(bytes, url_safe_trailing_bits())),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(bytes)),
             ..Jwk::default()
         })
     }
@@ -113,8 +112,8 @@ impl PrivateKeyToJwk for Ed25519PrivateKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            d: Some(base64::encode_config(d, url_safe_trailing_bits())),
-            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
+            d: Some(URL_SAFE_TRAILING_BITS.encode(d)),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(x)),
             ..Jwk::default()
         })
     }
@@ -181,7 +180,7 @@ impl PublicKeyToJwk for Ed25519PublicKey {
         Ok(Jwk {
             kty: "OKP".into(),
             crv: Some("Ed25519".into()),
-            x: Some(base64::encode_config(bytes, url_safe_trailing_bits())),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(bytes)),
             ..Jwk::default()
         })
     }
