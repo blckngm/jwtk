@@ -512,7 +512,10 @@ impl RemoteJwksVerifier {
         }))
     }
 
-    async fn reload_jwks(&self, cache: &mut tokio::sync::RwLockWriteGuard<'_, Option<JWKSCache>>) -> Result<()> {
+    async fn reload_jwks(
+        &self,
+        cache: &mut tokio::sync::RwLockWriteGuard<'_, Option<JWKSCache>>,
+    ) -> Result<()> {
         let response = self
             .client
             .get(&self.url)
@@ -538,7 +541,11 @@ impl RemoteJwksVerifier {
             Ok(v) => Ok(v),
             err @ Err(Error::NoKey) => {
                 let cache = self.cache.read().await;
-                if cache.as_ref().filter(|c| c.fresher_than(self.cooldown)).is_some() {
+                if cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
                     return err;
                 }
                 let mut cache = self.cache.write().await;
@@ -558,7 +565,11 @@ impl RemoteJwksVerifier {
             Ok(v) => Ok(v),
             err @ Err(Error::NoKey) => {
                 let cache = self.cache.read().await;
-                if !cache.as_ref().filter(|c| c.fresher_than(self.cooldown)).is_some() {
+                if !cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
                     return err;
                 }
                 let mut cache = self.cache.write().await;
