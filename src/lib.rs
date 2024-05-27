@@ -63,12 +63,49 @@ impl<T> OneOrMany<T> {
     fn is_empty(&self) -> bool {
         matches!(self, OneOrMany::Vec(v) if v.is_empty())
     }
+
+    /// Iterate over the values regardless of whether it contains one or many.
+    #[inline]
+    pub fn iter(&self) -> OneOrManyIter<T> {
+        OneOrManyIter::new(self)
+    }
 }
 
 impl<T> Default for OneOrMany<T> {
     #[inline]
     fn default() -> Self {
         Self::Vec(Vec::new())
+    }
+}
+
+pub struct OneOrManyIter<'a, T> {
+    one: Option<&'a T>,
+    many: Option<std::slice::Iter<'a, T>>,
+}
+
+impl<'a, T> OneOrManyIter<'a, T> {
+    fn new(inner: &'a OneOrMany<T>) -> Self {
+        match inner {
+            OneOrMany::One(v) => Self {
+                one: Some(v),
+                many: None,
+            },
+            OneOrMany::Vec(v) => Self {
+                one: None,
+                many: Some(v.iter()),
+            },
+        }
+    }
+}
+
+impl<'a, T> Iterator for OneOrManyIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(one) = self.one.take() {
+            return Some(one);
+        }
+        self.many.as_mut().and_then(|iter| iter.next())
     }
 }
 
@@ -501,6 +538,21 @@ mod tests {
     use crate::ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey};
 
     use super::*;
+
+    #[test]
+    fn one_or_many_iterator() {
+        let v = OneOrMany::Vec(vec![1, 2, 3]);
+        let mut iter = v.iter();
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.next(), Some(&2));
+        assert_eq!(iter.next(), Some(&3));
+        assert_eq!(iter.next(), None);
+
+        let v = OneOrMany::One(1);
+        let mut iter = v.iter();
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.next(), None);
+    } 
 
     #[test]
     fn signing_and_verification() -> Result<()> {
