@@ -552,7 +552,7 @@ mod tests {
         let mut iter = v.iter();
         assert_eq!(iter.next(), Some(&1));
         assert_eq!(iter.next(), None);
-    } 
+    }
 
     #[test]
     fn signing_and_verification() -> Result<()> {
