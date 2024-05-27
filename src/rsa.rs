@@ -1,3 +1,8 @@
+use crate::{
+    jwk::Jwk, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    URL_SAFE_TRAILING_BITS,
+};
+use base64::Engine as _;
 /// RSASSA-PKCS1-v1_5 using SHA-256.
 use openssl::{
     bn::BigNum,
@@ -7,11 +12,6 @@ use openssl::{
     sign::{RsaPssSaltlen, Signer, Verifier},
 };
 use smallvec::SmallVec;
-
-use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
-    VerificationKey,
-};
 
 /// RSA signature algorithms.
 #[non_exhaustive]
@@ -161,7 +161,7 @@ impl PrivateKeyToJwk for RsaPrivateKey {
         let dq = rsa.dmq1().map(|dq| dq.to_vec());
         let qi = rsa.iqmp().map(|qi| qi.to_vec());
         fn encode(x: &[u8]) -> String {
-            base64::encode_config(x, url_safe_trailing_bits())
+            URL_SAFE_TRAILING_BITS.encode(x)
         }
         Ok(Jwk {
             kty: "RSA".into(),
@@ -194,8 +194,8 @@ impl PublicKeyToJwk for RsaPrivateKey {
                 Some(self.algorithm.name().into())
             },
             use_: Some("sig".into()),
-            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
-            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
+            n: Some(URL_SAFE_TRAILING_BITS.encode(self.n()?)),
+            e: Some(URL_SAFE_TRAILING_BITS.encode(self.e()?)),
             ..Jwk::default()
         })
     }
@@ -265,8 +265,8 @@ impl PublicKeyToJwk for RsaPublicKey {
             kty: "RSA".into(),
             alg: self.algorithm.map(|alg| alg.name().to_string()),
             use_: Some("sig".into()),
-            n: Some(base64::encode_config(self.n()?, url_safe_trailing_bits())),
-            e: Some(base64::encode_config(self.e()?, url_safe_trailing_bits())),
+            n: Some(URL_SAFE_TRAILING_BITS.encode(self.n()?)),
+            e: Some(URL_SAFE_TRAILING_BITS.encode(self.e()?)),
             ..Jwk::default()
         })
     }

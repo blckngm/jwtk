@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use foreign_types::ForeignTypeRef;
 use openssl::{
     bn::{BigNum, BigNumContext},
@@ -11,8 +12,8 @@ use openssl_sys::BN_bn2bin;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    jwk::Jwk, url_safe_trailing_bits, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey,
-    VerificationKey,
+    jwk::Jwk, Error, PrivateKeyToJwk, PublicKeyToJwk, Result, SigningKey, VerificationKey,
+    URL_SAFE_TRAILING_BITS,
 };
 
 #[non_exhaustive]
@@ -196,8 +197,8 @@ impl PublicKeyToJwk for EcdsaPrivateKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(x)),
+            y: Some(URL_SAFE_TRAILING_BITS.encode(y)),
             ..Default::default()
         })
     }
@@ -211,9 +212,9 @@ impl PrivateKeyToJwk for EcdsaPrivateKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            d: Some(base64::encode_config(d, url_safe_trailing_bits())),
-            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
+            d: Some(URL_SAFE_TRAILING_BITS.encode(d)),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(x)),
+            y: Some(URL_SAFE_TRAILING_BITS.encode(y)),
             ..Default::default()
         })
     }
@@ -307,8 +308,8 @@ impl PublicKeyToJwk for EcdsaPublicKey {
             kty: "EC".into(),
             use_: Some("sig".into()),
             crv: Some(self.algorithm.curve_name().into()),
-            x: Some(base64::encode_config(x, url_safe_trailing_bits())),
-            y: Some(base64::encode_config(y, url_safe_trailing_bits())),
+            x: Some(URL_SAFE_TRAILING_BITS.encode(x)),
+            y: Some(URL_SAFE_TRAILING_BITS.encode(y)),
             ..Default::default()
         })
     }

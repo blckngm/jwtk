@@ -1,5 +1,10 @@
 #![doc = include_str!("../README.md")]
 
+use base64::Engine as _;
+use base64::{
+    alphabet,
+    engine::{general_purpose::NO_PAD, GeneralPurpose},
+};
 use openssl::error::ErrorStack;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -232,10 +237,10 @@ impl HeaderAndClaims<Map<String, Value>> {
     }
 }
 
-#[inline(always)]
-fn url_safe_trailing_bits() -> base64::Config {
-    base64::URL_SAFE_NO_PAD.decode_allow_trailing_bits(true)
-}
+pub const URL_SAFE_TRAILING_BITS: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::URL_SAFE,
+    NO_PAD.with_decode_allow_trailing_bits(true),
+);
 
 /// Encode and sign this header and claims with the signing key.
 ///
@@ -252,12 +257,12 @@ pub fn sign<ExtraClaims: Serialize>(
         claims.set_kid(kid);
     }
 
-    let mut w = base64::write::EncoderStringWriter::new(url_safe_trailing_bits());
+    let mut w = base64::write::EncoderStringWriter::new(&URL_SAFE_TRAILING_BITS);
     serde_json::to_writer(&mut w, &claims.header)?;
 
     let mut buf = w.into_inner();
     buf.push('.');
-    let mut w = base64::write::EncoderStringWriter::from(buf, url_safe_trailing_bits());
+    let mut w = base64::write::EncoderStringWriter::from_consumer(buf, &URL_SAFE_TRAILING_BITS);
 
     serde_json::to_writer(&mut w, &claims.claims)?;
     let mut buf = w.into_inner();
@@ -266,7 +271,7 @@ pub fn sign<ExtraClaims: Serialize>(
 
     buf.push('.');
 
-    let mut w = base64::write::EncoderStringWriter::from(buf, url_safe_trailing_bits());
+    let mut w = base64::write::EncoderStringWriter::from_consumer(buf, &URL_SAFE_TRAILING_BITS);
     w.write_all(&sig)?;
     Ok(w.into_inner())
 }
@@ -315,10 +320,10 @@ pub fn verify_only<ExtraClaims: DeserializeOwned>(
         return Err(Error::InvalidToken);
     }
 
-    let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
+    let header_r = base64::read::DecoderReader::new(&mut header, &URL_SAFE_TRAILING_BITS);
     let header: Header = serde_json::from_reader(header_r)?;
 
-    let sig = base64::decode_config(sig, url_safe_trailing_bits())?;
+    let sig = URL_SAFE_TRAILING_BITS.decode(sig)?;
 
     // Verify the signature.
     k.verify(
@@ -327,7 +332,7 @@ pub fn verify_only<ExtraClaims: DeserializeOwned>(
         &header.alg,
     )?;
 
-    let payload_r = base64::read::DecoderReader::new(&mut payload, url_safe_trailing_bits());
+    let payload_r = base64::read::DecoderReader::new(&mut payload, &URL_SAFE_TRAILING_BITS);
     let claims: Claims<ExtraClaims> = serde_json::from_reader(payload_r)?;
 
     Ok(HeaderAndClaims { header, claims })
@@ -348,10 +353,10 @@ pub fn decode_without_verify<ExtraClaims: DeserializeOwned>(
         return Err(Error::InvalidToken);
     }
 
-    let header_r = base64::read::DecoderReader::new(&mut header, url_safe_trailing_bits());
+    let header_r = base64::read::DecoderReader::new(&mut header, &URL_SAFE_TRAILING_BITS);
     let header: Header = serde_json::from_reader(header_r)?;
 
-    let payload_r = base64::read::DecoderReader::new(&mut payload, url_safe_trailing_bits());
+    let payload_r = base64::read::DecoderReader::new(&mut payload, &URL_SAFE_TRAILING_BITS);
     let claims: Claims<ExtraClaims> = serde_json::from_reader(payload_r)?;
 
     Ok(HeaderAndClaims { header, claims })
@@ -532,12 +537,12 @@ mod tests {
 
     #[test]
     fn claim_deserialization() {
-        let mut json = r#"eyJpYXQiOjEuNjkyMTkwMTI1RTksImV4cCI6MS42OTIxOTM3MjVFOSwiYW50aUNzcmZUb2tlbiI6bnVsbCwic3ViIjoiYTM5ZmZjNWUtNjc5ZC00YjAzLWI5YmYtYTliZjEzNDk4NGYzIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozOTk5L2F1dGgiLCJzZXNzaW9uSGFuZGxlIjoiNTAyMWQ2MTQtYzFmNi00ZTZkLWI1NjktZGQxN2Q0N2EyOWI0IiwicGFyZW50UmVmcmVzaFRva2VuSGFzaDEiOm51bGwsInJlZnJlc2hUb2tlbkhhc2gxIjoiNTZiMjcxZDcxNGRlMzg3M2UwMmIyZjAyYTJiZDcyYWJjZDIyZDM0NGZlZjE2YTJkMWJjYmM1NGU2YWUxN2M3OCJ9"#.as_bytes();
+        let mut json = r"eyJpYXQiOjEuNjkyMTkwMTI1RTksImV4cCI6MS42OTIxOTM3MjVFOSwiYW50aUNzcmZUb2tlbiI6bnVsbCwic3ViIjoiYTM5ZmZjNWUtNjc5ZC00YjAzLWI5YmYtYTliZjEzNDk4NGYzIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDozOTk5L2F1dGgiLCJzZXNzaW9uSGFuZGxlIjoiNTAyMWQ2MTQtYzFmNi00ZTZkLWI1NjktZGQxN2Q0N2EyOWI0IiwicGFyZW50UmVmcmVzaFRva2VuSGFzaDEiOm51bGwsInJlZnJlc2hUb2tlbkhhc2gxIjoiNTZiMjcxZDcxNGRlMzg3M2UwMmIyZjAyYTJiZDcyYWJjZDIyZDM0NGZlZjE2YTJkMWJjYmM1NGU2YWUxN2M3OCJ9".as_bytes();
 
-        let r = base64::read::DecoderReader::new(&mut json, url_safe_trailing_bits());
+        let r = base64::read::DecoderReader::new(&mut json, &URL_SAFE_TRAILING_BITS);
 
         let claims: Claims<Value> = serde_json::from_reader(r).unwrap();
-        assert_eq!(claims.iat, Some(Duration::from_secs(1692190125)));
-        assert_eq!(claims.exp, Some(Duration::from_secs(1692193725)));
+        assert_eq!(claims.iat, Some(Duration::from_secs(1_692_190_125)));
+        assert_eq!(claims.exp, Some(Duration::from_secs(1_692_193_725)));
     }
 }
