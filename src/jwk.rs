@@ -565,7 +565,7 @@ impl RemoteJwksVerifier {
             Ok(v) => Ok(v),
             err @ Err(Error::NoKey) => {
                 let cache = self.cache.read().await;
-                if !cache
+                if cache
                     .as_ref()
                     .filter(|c| c.fresher_than(self.cooldown))
                     .is_some()
