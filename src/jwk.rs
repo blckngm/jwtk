@@ -438,6 +438,7 @@ struct JWKSCache {
     last_retrieved: std::time::Instant,
 }
 
+#[cfg(feature = "remote-jwks")]
 impl JWKSCache {
     fn fresher_than(&self, age: std::time::Duration) -> bool {
         self.last_retrieved
