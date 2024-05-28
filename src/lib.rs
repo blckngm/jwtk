@@ -10,6 +10,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_with::{serde_as, skip_serializing_none};
 use smallvec::SmallVec;
+use std::fmt::Display;
 use std::{
     borrow::Cow,
     fmt,
@@ -75,6 +76,27 @@ impl<T> Default for OneOrMany<T> {
     #[inline]
     fn default() -> Self {
         Self::Vec(Vec::new())
+    }
+}
+
+impl<T> Display for OneOrMany<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OneOrMany::One(v) => v.fmt(f),
+            OneOrMany::Vec(v) => {
+                write!(f, "[")?;
+                for (i, v) in v.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    v.fmt(f)?;
+                }
+                write!(f, "]")
+            }
+        }
     }
 }
 
@@ -552,6 +574,15 @@ mod tests {
         let mut iter = v.iter();
         assert_eq!(iter.next(), Some(&1));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn one_or_many_display() {
+        let v = OneOrMany::Vec(vec![1, 2, 3]);
+        assert_eq!(format!("{}", v), "[1, 2, 3]");
+
+        let v = OneOrMany::One(1);
+        assert_eq!(format!("{}", v), "1");
     }
 
     #[test]
