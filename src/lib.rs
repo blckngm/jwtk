@@ -35,7 +35,7 @@ pub mod jwk;
 
 /// JWT header.
 #[non_exhaustive]
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Header {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<String>,
@@ -113,7 +113,7 @@ impl<'a, T> Iterator for OneOrManyIter<'a, T> {
 #[serde_as]
 #[skip_serializing_none]
 #[non_exhaustive]
-#[derive(Debug, Serialize, Default, Deserialize)]
+#[derive(Clone, Debug, Serialize, Default, Deserialize)]
 pub struct Claims<ExtraClaims> {
     #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
     pub exp: Option<Duration>,
@@ -139,7 +139,7 @@ pub struct Claims<ExtraClaims> {
 /// Use `serde_json::Map<String, Value>` for dynamic claims.
 ///
 /// Or define your own claims type which implements `Serialize`/`Deserialize`.
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct HeaderAndClaims<ExtraClaims> {
     header: Header,
     claims: Claims<ExtraClaims>,
