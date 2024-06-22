@@ -4,7 +4,6 @@ async fn main() -> jwtk::Result<()> {
     use jwtk::jwk::RemoteJwksVerifier;
     use serde::Deserialize;
     use serde_json::{Map, Value};
-    use std::time::Duration;
 
     #[derive(Deserialize)]
     struct Token {
@@ -16,11 +15,7 @@ async fn main() -> jwtk::Result<()> {
         .json()
         .await?;
 
-    let j = RemoteJwksVerifier::new(
-        "http://127.0.0.1:3000/jwks".into(),
-        None,
-        Duration::from_secs(300),
-    );
+    let j = RemoteJwksVerifier::new("http://127.0.0.1:3000/jwks".into());
     let c = j.verify::<Map<String, Value>>(&v.token).await?;
 
     println!("headers:\n{}", serde_json::to_string(c.header())?);
