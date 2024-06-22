@@ -527,6 +527,7 @@ impl RemoteJwksVerifier {
     }
 }
 
+#[cfg(feature = "remote-jwks")]
 pub struct RemoteJwksVerifierBuilder {
     url: String,
     client: Option<reqwest::Client>,
@@ -534,6 +535,7 @@ pub struct RemoteJwksVerifierBuilder {
     require_kid: bool,
 }
 
+#[cfg(feature = "remote-jwks")]
 impl RemoteJwksVerifierBuilder {
     /// Provide an HTTP client for fetching the JWK set.
     pub fn with_client(mut self, client: reqwest::Client) -> Self {
