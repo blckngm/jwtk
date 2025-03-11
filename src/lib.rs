@@ -242,7 +242,7 @@ impl<ExtraClaims> HeaderAndClaims<ExtraClaims> {
     pub fn iat_is_later_than(&self, t: SystemTime) -> bool {
         self.claims
             .iat
-            .map_or(false, |iat| iat > t.duration_since(UNIX_EPOCH).unwrap())
+            .is_some_and(|iat| iat > t.duration_since(UNIX_EPOCH).unwrap())
     }
 
     /// Set token expiration time (`exp`) to some time after the current time,
