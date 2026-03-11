@@ -11,12 +11,12 @@ jobs:
       matrix:
         features:
           - ""
-          - "rsa"
+          - "aws-lc"
           - "openssl"
-          - "rsa,openssl"
-          - "rsa,remote-jwks"
+          - "aws-lc,openssl"
+          - "aws-lc,remote-jwks"
           - "openssl,remote-jwks"
-          - "rsa,openssl,remote-jwks"
+          - "aws-lc,openssl,remote-jwks"
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
