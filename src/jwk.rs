@@ -482,7 +482,9 @@ impl RemoteJwksVerifier {
         // Cache still valid.
         if let Some(c) = &*cache {
             if c.fresher_than(self.cache_duration) {
-                return Ok(tokio::sync::RwLockReadGuard::map(cache, |c| c.as_ref().unwrap()));
+                return Ok(tokio::sync::RwLockReadGuard::map(cache, |c| {
+                    c.as_ref().unwrap()
+                }));
             }
         }
         drop(cache);
@@ -497,7 +499,9 @@ impl RemoteJwksVerifier {
         }
         self.reload_jwks(&mut cache).await?;
 
-        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| c.as_ref().unwrap()))
+        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
+            c.as_ref().unwrap()
+        }))
     }
 
     async fn reload_jwks(
