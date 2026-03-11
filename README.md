@@ -3,7 +3,7 @@ support.
 
 ## Algorithms
 
-* RS256, RS384, RS512, PS256, PS384, PS512 (feature: `rsa` or `openssl`)
+* RS256, RS384, RS512, PS256, PS384, PS512 (verification: `aws-lc` or `openssl`; signing: `openssl`)
 * HS256, HS384, HS512 (feature: `openssl`)
 * ES256, ES384, ES512, ES256K (feature: `openssl`)
 * Ed25519 (feature: `openssl`)
@@ -21,12 +21,12 @@ when the `openssl` feature is enabled. Supports working with generic keys
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `rsa` | Yes | RSA signing/verification via [RustCrypto](https://github.com/RustCrypto). No C dependencies. |
-| `openssl` | No | Full algorithm support (RSA, HMAC, ECDSA, EdDSA) via OpenSSL. When enabled, RSA uses OpenSSL instead of RustCrypto. |
+| `aws-lc` | Yes | RSA signature verification via [aws-lc-rs](https://github.com/aws/aws-lc-rs). |
+| `openssl` | No | Full algorithm support (RSA signing & verification, HMAC, ECDSA, EdDSA) via OpenSSL. When enabled, RSA uses OpenSSL instead of aws-lc-rs. |
 | `remote-jwks` | Yes | `RemoteJwksVerifier` for fetching and caching remote JWK Sets. |
 
-With the default features (`rsa` + `remote-jwks`), RS256 JWT verification
-works out of the box with no C dependencies.
+With the default features (`aws-lc` + `remote-jwks`), RSA JWT verification
+works out of the box.
 
 ## Examples
 
