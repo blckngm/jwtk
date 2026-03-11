@@ -37,11 +37,20 @@ pub mod jwk;
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Header {
+    /// `typ`: Type
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-5.1)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typ: Option<String>,
 
+    /// `alg`: Algorithm
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.1)
     pub alg: Cow<'static, str>,
 
+    /// `kid`: Key ID
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.4)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kid: Option<String>,
 
@@ -115,17 +124,43 @@ impl<'a, T> Iterator for OneOrManyIter<'a, T> {
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Default, Deserialize)]
 pub struct Claims<ExtraClaims> {
+    /// `exp`: Expiration Date
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.4)
     #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
     pub exp: Option<Duration>,
+
+    /// `nbf`: Not Before
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.5)
     #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
     pub nbf: Option<Duration>,
+
+    /// `iat`: Issued At
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.6)
     #[serde_as(as = "Option<serde_with::DurationSeconds<f64>>")]
     pub iat: Option<Duration>,
 
+    /// `iss`: Issuer
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.1)
     pub iss: Option<String>,
+
+    /// `sub`: Subject
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.2)
     pub sub: Option<String>,
+
+    /// `aud`: Audience
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.3)
     #[serde(default, skip_serializing_if = "OneOrMany::is_empty")]
     pub aud: OneOrMany<String>,
+
+    /// `jti`: JWT ID
+    ///
+    /// [RFC Reference](https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.7)
     pub jti: Option<String>,
 
     #[serde(flatten)]
