@@ -477,14 +477,12 @@ impl RemoteJwksVerifier {
         }
     }
 
-    async fn get_verifier(&self) -> Result<tokio::sync::RwLockReadGuard<'_, JwkSetVerifier>> {
+    async fn get_cache(&self) -> Result<tokio::sync::RwLockReadGuard<'_, JWKSCache>> {
         let cache = self.cache.read().await;
         // Cache still valid.
         if let Some(c) = &*cache {
             if c.fresher_than(self.cache_duration) {
-                return Ok(tokio::sync::RwLockReadGuard::map(cache, |c| {
-                    &c.as_ref().unwrap().jwks
-                }));
+                return Ok(tokio::sync::RwLockReadGuard::map(cache, |c| c.as_ref().unwrap()));
             }
         }
         drop(cache);
@@ -493,15 +491,13 @@ impl RemoteJwksVerifier {
         if let Some(c) = &*cache {
             if c.fresher_than(self.cache_duration) {
                 return Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
-                    &c.as_ref().unwrap().jwks
+                    c.as_ref().unwrap()
                 }));
             }
         }
         self.reload_jwks(&mut cache).await?;
 
-        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
-            &c.as_ref().unwrap().jwks
-        }))
+        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| c.as_ref().unwrap()))
     }
 
     async fn reload_jwks(
@@ -527,63 +523,51 @@ impl RemoteJwksVerifier {
         Ok(())
     }
 
-    pub async fn verify<E: DeserializeOwned>(&self, token: &str) -> Result<HeaderAndClaims<E>> {
-        let v = self.get_verifier().await?;
-        match v.verify(token) {
+    async fn verify_with_reload_on_no_key<E, F>(
+        &self,
+        token: &str,
+        verify: F,
+    ) -> Result<HeaderAndClaims<E>>
+    where
+        E: DeserializeOwned,
+        F: Fn(&JwkSetVerifier, &str) -> Result<HeaderAndClaims<E>>,
+    {
+        let cache = self.get_cache().await?;
+        match verify(&cache.jwks, token) {
             Ok(v) => Ok(v),
             err @ Err(Error::NoKey) => {
-                let cache = self.cache.read().await;
-                if cache
-                    .as_ref()
-                    .filter(|c| c.fresher_than(self.cooldown))
-                    .is_some()
-                {
+                if cache.fresher_than(self.cooldown) {
                     return err;
                 }
+                drop(cache);
+
                 let mut cache = self.cache.write().await;
-                if cache
-                    .as_ref()
-                    .filter(|c| c.fresher_than(self.cooldown))
-                    .is_some()
-                {
-                    return cache.as_ref().unwrap().jwks.verify(token);
+                if let Some(c) = cache.as_ref() {
+                    if c.fresher_than(self.cooldown) {
+                        return verify(&c.jwks, token);
+                    }
                 }
                 self.reload_jwks(&mut cache).await?;
-                cache.as_ref().unwrap().jwks.verify(token)
+                match cache.as_ref() {
+                    Some(c) => verify(&c.jwks, token),
+                    None => Err(Error::NoKey),
+                }
             }
             Err(e) => Err(e),
         }
+    }
+
+    pub async fn verify<E: DeserializeOwned>(&self, token: &str) -> Result<HeaderAndClaims<E>> {
+        self.verify_with_reload_on_no_key(token, |jwks, token| jwks.verify(token))
+            .await
     }
 
     pub async fn verify_only<E: DeserializeOwned>(
         &self,
         token: &str,
     ) -> Result<HeaderAndClaims<E>> {
-        let v = self.get_verifier().await?;
-        match v.verify_only(token) {
-            Ok(v) => Ok(v),
-            err @ Err(Error::NoKey) => {
-                let cache = self.cache.read().await;
-                if cache
-                    .as_ref()
-                    .filter(|c| c.fresher_than(self.cooldown))
-                    .is_some()
-                {
-                    return err;
-                }
-                let mut cache = self.cache.write().await;
-                if cache
-                    .as_ref()
-                    .filter(|c| c.fresher_than(self.cooldown))
-                    .is_some()
-                {
-                    return cache.as_ref().unwrap().jwks.verify_only(token);
-                }
-                self.reload_jwks(&mut cache).await?;
-                cache.as_ref().unwrap().jwks.verify_only(token)
-            }
-            Err(e) => Err(e),
-        }
+        self.verify_with_reload_on_no_key(token, |jwks, token| jwks.verify_only(token))
+            .await
     }
 }
 
