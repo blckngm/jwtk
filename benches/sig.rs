@@ -26,7 +26,7 @@ fn bench_sig_es256(b: &mut test::Bencher) {
     });
 }
 
-#[cfg(any(feature = "rsa", feature = "openssl"))]
+#[cfg(feature = "openssl")]
 #[bench]
 fn bench_sig_rs256(b: &mut test::Bencher) {
     use jwtk::rsa::RsaPrivateKey;
@@ -46,7 +46,7 @@ fn bench_sig_rs256(b: &mut test::Bencher) {
     });
 }
 
-#[cfg(any(feature = "rsa", feature = "openssl"))]
+#[cfg(feature = "openssl")]
 #[bench]
 fn bench_sig_ps256(b: &mut test::Bencher) {
     use jwtk::rsa::RsaPrivateKey;

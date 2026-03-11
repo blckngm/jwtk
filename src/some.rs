@@ -4,8 +4,10 @@
 use crate::ecdsa::{EcdsaPrivateKey, EcdsaPublicKey};
 #[cfg(feature = "openssl")]
 use crate::eddsa::{Ed25519PrivateKey, Ed25519PublicKey};
-#[cfg(any(feature = "rsa", feature = "openssl"))]
-use crate::rsa::{RsaPrivateKey, RsaPublicKey};
+#[cfg(feature = "openssl")]
+use crate::rsa::RsaPrivateKey;
+#[cfg(any(feature = "openssl", feature = "aws-lc"))]
+use crate::rsa::RsaPublicKey;
 
 #[cfg(feature = "openssl")]
 use crate::Error;
@@ -22,7 +24,7 @@ pub enum SomePrivateKey {
     Ed25519(Ed25519PrivateKey),
     #[cfg(feature = "openssl")]
     Ecdsa(EcdsaPrivateKey),
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(feature = "openssl")]
     Rsa(RsaPrivateKey),
 }
 
@@ -37,7 +39,7 @@ pub enum SomePublicKey {
     Ed25519(Ed25519PublicKey),
     #[cfg(feature = "openssl")]
     Ecdsa(EcdsaPublicKey),
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(any(feature = "openssl", feature = "aws-lc"))]
     Rsa(RsaPublicKey),
 }
 
@@ -57,7 +59,7 @@ impl From<EcdsaPrivateKey> for SomePrivateKey {
     }
 }
 
-#[cfg(any(feature = "rsa", feature = "openssl"))]
+#[cfg(feature = "openssl")]
 impl From<RsaPrivateKey> for SomePrivateKey {
     #[inline]
     fn from(k: RsaPrivateKey) -> SomePrivateKey {
@@ -81,7 +83,7 @@ impl From<EcdsaPublicKey> for SomePublicKey {
     }
 }
 
-#[cfg(any(feature = "rsa", feature = "openssl"))]
+#[cfg(any(feature = "openssl", feature = "aws-lc"))]
 impl From<RsaPublicKey> for SomePublicKey {
     #[inline]
     fn from(k: RsaPublicKey) -> SomePublicKey {
@@ -176,9 +178,9 @@ impl PublicKeyToJwk for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.public_key_to_jwk(),
             #[cfg(feature = "openssl")]
             SomePrivateKey::Ecdsa(ec) => ec.public_key_to_jwk(),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             SomePrivateKey::Rsa(rsa) => rsa.public_key_to_jwk(),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(feature = "openssl"))]
             _ => unreachable!(),
         }
     }
@@ -191,9 +193,9 @@ impl PrivateKeyToJwk for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.private_key_to_jwk(),
             #[cfg(feature = "openssl")]
             SomePrivateKey::Ecdsa(ec) => ec.private_key_to_jwk(),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             SomePrivateKey::Rsa(rsa) => rsa.private_key_to_jwk(),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(feature = "openssl"))]
             _ => unreachable!(),
         }
     }
@@ -206,9 +208,9 @@ impl SigningKey for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.alg(),
             #[cfg(feature = "openssl")]
             SomePrivateKey::Ecdsa(ec) => ec.alg(),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             SomePrivateKey::Rsa(rsa) => rsa.alg(),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(feature = "openssl"))]
             _ => unreachable!(),
         }
     }
@@ -219,9 +221,9 @@ impl SigningKey for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.sign(_v),
             #[cfg(feature = "openssl")]
             SomePrivateKey::Ecdsa(ec) => ec.sign(_v),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             SomePrivateKey::Rsa(rsa) => rsa.sign(_v),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(feature = "openssl"))]
             _ => unreachable!(),
         }
     }
@@ -234,9 +236,9 @@ impl VerificationKey for SomePrivateKey {
             SomePrivateKey::Ed25519(ed) => ed.verify(_v, _sig, _alg),
             #[cfg(feature = "openssl")]
             SomePrivateKey::Ecdsa(ec) => ec.verify(_v, _sig, _alg),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             SomePrivateKey::Rsa(rsa) => rsa.verify(_v, _sig, _alg),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(feature = "openssl"))]
             _ => unreachable!(),
         }
     }
@@ -249,9 +251,9 @@ impl VerificationKey for SomePublicKey {
             SomePublicKey::Ed25519(ed) => ed.verify(_v, _sig, _alg),
             #[cfg(feature = "openssl")]
             SomePublicKey::Ecdsa(ec) => ec.verify(_v, _sig, _alg),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(any(feature = "openssl", feature = "aws-lc"))]
             SomePublicKey::Rsa(rsa) => rsa.verify(_v, _sig, _alg),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(any(feature = "openssl", feature = "aws-lc")))]
             _ => unreachable!(),
         }
     }
@@ -264,9 +266,9 @@ impl PublicKeyToJwk for SomePublicKey {
             SomePublicKey::Ed25519(ed) => ed.public_key_to_jwk(),
             #[cfg(feature = "openssl")]
             SomePublicKey::Ecdsa(ec) => ec.public_key_to_jwk(),
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(any(feature = "openssl", feature = "aws-lc"))]
             SomePublicKey::Rsa(rsa) => rsa.public_key_to_jwk(),
-            #[cfg(not(any(feature = "rsa", feature = "openssl")))]
+            #[cfg(not(any(feature = "openssl", feature = "aws-lc")))]
             _ => unreachable!(),
         }
     }

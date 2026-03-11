@@ -546,14 +546,6 @@ impl From<openssl::error::ErrorStack> for Error {
     }
 }
 
-#[cfg(all(feature = "rsa", not(feature = "openssl")))]
-impl From<signature::Error> for Error {
-    #[inline]
-    fn from(e: signature::Error) -> Error {
-        Error::Crypto(Box::new(e))
-    }
-}
-
 impl From<serde_json::Error> for Error {
     #[inline]
     fn from(e: serde_json::Error) -> Error {

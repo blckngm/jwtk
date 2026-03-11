@@ -9,11 +9,29 @@ use crate::{
     rsa::RsaAlgorithm, some::SomePublicKey, verify, verify_only, Error, Header, HeaderAndClaims,
     PublicKeyToJwk, Result, SigningKey, SomePrivateKey, VerificationKey, URL_SAFE_TRAILING_BITS,
 };
+#[cfg(any(feature = "openssl", feature = "aws-lc"))]
 use base64::Engine as _;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+#[cfg(any(feature = "openssl", feature = "aws-lc"))]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+
+#[cfg(feature = "openssl")]
+fn sha256(data: &[u8]) -> [u8; 32] {
+    let digest = openssl::hash::hash(openssl::hash::MessageDigest::sha256(), data).unwrap();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+#[cfg(all(feature = "aws-lc", not(feature = "openssl")))]
+fn sha256(data: &[u8]) -> [u8; 32] {
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, data);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(digest.as_ref());
+    out
+}
 
 /// JWK Representation.
 #[non_exhaustive]
@@ -69,7 +87,7 @@ impl Jwk {
         // If let would be too long.
         #[allow(clippy::single_match)]
         match &*self.kty {
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(any(feature = "openssl", feature = "aws-lc"))]
             "RSA" => return self.rsa_verification_key(),
             #[cfg(feature = "openssl")]
             "EC" => return self.ec_verification_key(),
@@ -83,7 +101,7 @@ impl Jwk {
 
     pub fn to_signing_key(&self, rsa_fallback_algorithm: RsaAlgorithm) -> Result<SomePrivateKey> {
         match &*self.kty {
-            #[cfg(any(feature = "rsa", feature = "openssl"))]
+            #[cfg(feature = "openssl")]
             "RSA" => self.rsa_signing_key(rsa_fallback_algorithm),
             #[cfg(feature = "openssl")]
             "EC" => self.ec_signing_key(),
@@ -96,7 +114,7 @@ impl Jwk {
         }
     }
 
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(feature = "openssl")]
     #[allow(clippy::many_single_char_names)]
     pub(super) fn rsa_signing_key(
         &self,
@@ -137,7 +155,7 @@ impl Jwk {
         }
     }
 
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(any(feature = "openssl", feature = "aws-lc"))]
     pub(super) fn rsa_verification_key(&self) -> Result<SomePublicKey> {
         match (self.alg.as_deref(), &self.n, &self.e) {
             (alg, Some(ref n), Some(ref e)) => {
@@ -218,6 +236,7 @@ impl Jwk {
     }
 
     /// Get key thumbprint (rfc 7638) with SHA-256.
+    #[cfg(any(feature = "openssl", feature = "aws-lc"))]
     pub fn get_thumbprint_sha256(&self) -> Result<[u8; 32]> {
         let as_json = match &*self.kty {
             "RSA" => {
@@ -265,13 +284,11 @@ impl Jwk {
             }
             _ => return Err(Error::UnsupportedOrInvalidKey),
         };
-        let hash = Sha256::digest(as_json.as_bytes());
-        let mut out = [0u8; 32];
-        out.copy_from_slice(&hash[..]);
-        Ok(out)
+        Ok(sha256(as_json.as_bytes()))
     }
 
     /// Get key thumbprint with SHA-256, base64url-encoded.
+    #[cfg(any(feature = "openssl", feature = "aws-lc"))]
     pub fn get_thumbprint_sha256_base64(&self) -> Result<String> {
         Ok(URL_SAFE_TRAILING_BITS.encode(self.get_thumbprint_sha256()?))
     }
@@ -382,6 +399,7 @@ impl<S> WithKid<S> {
     }
 
     /// Use key thumbprint as key id.
+    #[cfg(any(feature = "openssl", feature = "aws-lc"))]
     pub fn new_with_thumbprint_id(inner: S) -> Result<Self>
     where
         S: PublicKeyToJwk,
@@ -662,7 +680,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(feature = "openssl")]
     #[test]
     fn test_rsa_thumbprint() -> Result<()> {
         use crate::rsa::{RsaAlgorithm, RsaPrivateKey};
@@ -688,13 +706,13 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(feature = "openssl")]
     #[derive(serde::Serialize, serde::Deserialize)]
     struct MyClaim {
         foo: String,
     }
 
-    #[cfg(any(feature = "rsa", feature = "openssl"))]
+    #[cfg(feature = "openssl")]
     #[test]
     fn test_jwks_verify() -> Result<()> {
         use crate::{
