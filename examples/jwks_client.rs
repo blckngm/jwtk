@@ -20,6 +20,7 @@ async fn main() -> jwtk::Result<()> {
         "http://127.0.0.1:3000/jwks".into(),
         None,
         Duration::from_secs(300),
+        None,
     );
     let c = j.verify::<Map<String, Value>>(&v.token).await?;
 
