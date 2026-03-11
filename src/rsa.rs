@@ -224,7 +224,7 @@ impl RsaPublicKey {
 
     /// Both `BEGIN PUBLIC KEY` and `BEGIN RSA PUBLIC KEY` are OK.
     pub fn from_pem(pem: &[u8], algorithm: Option<RsaAlgorithm>) -> Result<Self> {
-        if std::str::from_utf8(pem).map_or(false, |pem| pem.contains("BEGIN RSA")) {
+        if std::str::from_utf8(pem).is_ok_and(|pem| pem.contains("BEGIN RSA")) {
             let rsa = Rsa::public_key_from_pem_pkcs1(pem)?;
             Self::from_pkey(PKey::from_rsa(rsa)?, algorithm)
         } else {

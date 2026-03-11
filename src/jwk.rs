@@ -435,7 +435,17 @@ impl<K: PublicKeyToJwk> PublicKeyToJwk for WithKid<K> {
 #[cfg(feature = "remote-jwks")]
 struct JWKSCache {
     jwks: JwkSetVerifier,
-    valid_until: std::time::Instant,
+    last_retrieved: std::time::Instant,
+}
+
+#[cfg(feature = "remote-jwks")]
+impl JWKSCache {
+    fn fresher_than(&self, age: std::time::Duration) -> bool {
+        self.last_retrieved
+            .checked_add(age)
+            .and_then(|deadline| deadline.checked_duration_since(std::time::Instant::now()))
+            .is_some()
+    }
 }
 
 /// A JWK Set served from a remote url. Automatically fetched and cached.
@@ -444,6 +454,7 @@ pub struct RemoteJwksVerifier {
     url: String,
     client: reqwest::Client,
     cache_duration: std::time::Duration,
+    cooldown: std::time::Duration,
     cache: tokio::sync::RwLock<Option<JWKSCache>>,
     require_kid: bool,
 }
@@ -461,6 +472,7 @@ impl RemoteJwksVerifier {
             url,
             client: None,
             cache_duration: None,
+            cooldown: None,
             require_kid: true,
         }
     }
@@ -469,10 +481,7 @@ impl RemoteJwksVerifier {
         let cache = self.cache.read().await;
         // Cache still valid.
         if let Some(c) = &*cache {
-            if c.valid_until
-                .checked_duration_since(std::time::Instant::now())
-                .is_some()
-            {
+            if c.fresher_than(self.cache_duration) {
                 return Ok(tokio::sync::RwLockReadGuard::map(cache, |c| {
                     &c.as_ref().unwrap().jwks
                 }));
@@ -482,15 +491,23 @@ impl RemoteJwksVerifier {
 
         let mut cache = self.cache.write().await;
         if let Some(c) = &*cache {
-            if c.valid_until
-                .checked_duration_since(std::time::Instant::now())
-                .is_some()
-            {
+            if c.fresher_than(self.cache_duration) {
                 return Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
                     &c.as_ref().unwrap().jwks
                 }));
             }
         }
+        self.reload_jwks(&mut cache).await?;
+
+        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
+            &c.as_ref().unwrap().jwks
+        }))
+    }
+
+    async fn reload_jwks(
+        &self,
+        cache: &mut tokio::sync::RwLockWriteGuard<'_, Option<JWKSCache>>,
+    ) -> Result<()> {
         let response = self
             .client
             .get(&self.url)
@@ -499,23 +516,43 @@ impl RemoteJwksVerifier {
             .await?;
         let jwks: JwkSet = response.json().await?;
 
-        *cache = Some(JWKSCache {
+        cache.replace(JWKSCache {
             jwks: {
                 let mut v = jwks.verifier();
                 v.require_kid = self.require_kid;
                 v
             },
-            valid_until: std::time::Instant::now() + self.cache_duration,
+            last_retrieved: std::time::Instant::now(),
         });
-
-        Ok(tokio::sync::RwLockReadGuard::map(cache.downgrade(), |c| {
-            &c.as_ref().unwrap().jwks
-        }))
+        Ok(())
     }
 
     pub async fn verify<E: DeserializeOwned>(&self, token: &str) -> Result<HeaderAndClaims<E>> {
         let v = self.get_verifier().await?;
-        v.verify(token)
+        match v.verify(token) {
+            Ok(v) => Ok(v),
+            err @ Err(Error::NoKey) => {
+                let cache = self.cache.read().await;
+                if cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
+                    return err;
+                }
+                let mut cache = self.cache.write().await;
+                if cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
+                    return cache.as_ref().unwrap().jwks.verify(token);
+                }
+                self.reload_jwks(&mut cache).await?;
+                cache.as_ref().unwrap().jwks.verify(token)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn verify_only<E: DeserializeOwned>(
@@ -523,7 +560,30 @@ impl RemoteJwksVerifier {
         token: &str,
     ) -> Result<HeaderAndClaims<E>> {
         let v = self.get_verifier().await?;
-        v.verify_only(token)
+        match v.verify_only(token) {
+            Ok(v) => Ok(v),
+            err @ Err(Error::NoKey) => {
+                let cache = self.cache.read().await;
+                if cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
+                    return err;
+                }
+                let mut cache = self.cache.write().await;
+                if cache
+                    .as_ref()
+                    .filter(|c| c.fresher_than(self.cooldown))
+                    .is_some()
+                {
+                    return cache.as_ref().unwrap().jwks.verify_only(token);
+                }
+                self.reload_jwks(&mut cache).await?;
+                cache.as_ref().unwrap().jwks.verify_only(token)
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -532,6 +592,7 @@ pub struct RemoteJwksVerifierBuilder {
     url: String,
     client: Option<reqwest::Client>,
     cache_duration: Option<std::time::Duration>,
+    cooldown: Option<std::time::Duration>,
     require_kid: bool,
 }
 
@@ -550,6 +611,13 @@ impl RemoteJwksVerifierBuilder {
         self
     }
 
+    /// Set cooldown for reloading JWKs in response to unknown `kid`.
+    /// Default is 30 seconds.
+    pub fn with_cooldown(mut self, duration: std::time::Duration) -> Self {
+        self.cooldown = Some(duration);
+        self
+    }
+
     /// Calls to `verify` and `verify_only` calls will try all keys
     /// from the key set if a `kid` is not specified in the token.
     pub fn with_kid_optional(mut self) -> Self {
@@ -565,6 +633,9 @@ impl RemoteJwksVerifierBuilder {
             cache_duration: self
                 .cache_duration
                 .unwrap_or_else(|| std::time::Duration::from_secs(300)),
+            cooldown: self
+                .cooldown
+                .unwrap_or_else(|| std::time::Duration::from_secs(30)),
             cache: tokio::sync::RwLock::new(None),
             require_kid: self.require_kid,
         }
