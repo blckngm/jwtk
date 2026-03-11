@@ -7,28 +7,34 @@
 //!
 //! Tokens will be issued at http://127.0.0.1:3000/token
 
+#[cfg(feature = "openssl")]
 use axum::{
     extract::State,
     response::{IntoResponse, Json},
     routing::get,
     Router,
 };
+#[cfg(feature = "openssl")]
 use jwtk::{
     jwk::{JwkSet, WithKid},
     rsa::RsaAlgorithm,
     sign, HeaderAndClaims, PublicKeyToJwk, SomePrivateKey,
 };
+#[cfg(feature = "openssl")]
 use std::{sync::Arc, time::Duration};
 
+#[cfg(feature = "openssl")]
 struct AppState {
     k: WithKid<SomePrivateKey>,
     jwks: JwkSet,
 }
 
+#[cfg(feature = "openssl")]
 async fn jwks_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     Json(&state.jwks).into_response()
 }
 
+#[cfg(feature = "openssl")]
 async fn token_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     let mut token = HeaderAndClaims::new_dynamic();
     token
@@ -43,6 +49,7 @@ async fn token_handler(state: State<Arc<AppState>>) -> impl IntoResponse {
     }))
 }
 
+#[cfg(feature = "openssl")]
 #[tokio::main]
 async fn main() -> jwtk::Result<()> {
     let k = std::fs::read("key.pem")?;
@@ -73,4 +80,9 @@ async fn main() -> jwtk::Result<()> {
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
+}
+
+#[cfg(not(feature = "openssl"))]
+fn main() {
+    eprintln!("This example requires the 'openssl' feature");
 }

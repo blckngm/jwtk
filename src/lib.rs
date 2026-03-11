@@ -5,7 +5,6 @@ use base64::{
     alphabet,
     engine::{general_purpose::NO_PAD, GeneralPurpose},
 };
-use openssl::error::ErrorStack;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_with::{serde_as, skip_serializing_none};
@@ -23,10 +22,13 @@ pub use some::*;
 
 mod some;
 
+#[cfg(feature = "openssl")]
 pub mod hmac;
 
+#[cfg(feature = "openssl")]
 pub mod eddsa;
 
+#[cfg(feature = "openssl")]
 pub mod ecdsa;
 
 pub mod rsa;
@@ -75,7 +77,7 @@ impl<T> OneOrMany<T> {
 
     /// Iterate over the values regardless of whether it contains one or many.
     #[inline]
-    pub fn iter(&self) -> OneOrManyIter<T> {
+    pub fn iter(&self) -> OneOrManyIter<'_, T> {
         OneOrManyIter::new(self)
     }
 }
@@ -399,7 +401,7 @@ pub fn verify_only<ExtraClaims: DeserializeOwned>(
 
     // Verify the signature.
     k.verify(
-        token[..header_and_payload_len].as_bytes(),
+        &token.as_bytes()[..header_and_payload_len],
         &sig,
         &header.alg,
     )?;
@@ -476,7 +478,9 @@ pub enum Error {
     UnsupportedOrInvalidKey,
     Utf8(FromUtf8Error),
     IoError(std::io::Error),
-    OpenSsl(ErrorStack),
+    #[cfg(feature = "openssl")]
+    OpenSsl(openssl::error::ErrorStack),
+    Crypto(Box<dyn std::error::Error + Send + Sync>),
     SerdeJson(serde_json::Error),
     Decode(base64::DecodeError),
     #[cfg(feature = "remote-jwks")]
@@ -487,7 +491,9 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::IoError(e) => e.fmt(f),
+            #[cfg(feature = "openssl")]
             Error::OpenSsl(e) => e.fmt(f),
+            Error::Crypto(e) => e.fmt(f),
             Error::SerdeJson(e) => e.fmt(f),
             Error::Decode(e) => e.fmt(f),
             #[cfg(feature = "remote-jwks")]
@@ -512,7 +518,9 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::IoError(e) => Some(e),
+            #[cfg(feature = "openssl")]
             Error::OpenSsl(e) => Some(e),
+            Error::Crypto(e) => Some(e.as_ref()),
             Error::SerdeJson(e) => Some(e),
             Error::Decode(e) => Some(e),
             Error::Utf8(e) => Some(e),
@@ -530,10 +538,19 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<ErrorStack> for Error {
+#[cfg(feature = "openssl")]
+impl From<openssl::error::ErrorStack> for Error {
     #[inline]
-    fn from(e: ErrorStack) -> Error {
+    fn from(e: openssl::error::ErrorStack) -> Error {
         Error::OpenSsl(e)
+    }
+}
+
+#[cfg(all(feature = "rsa", not(feature = "openssl")))]
+impl From<signature::Error> for Error {
+    #[inline]
+    fn from(e: signature::Error) -> Error {
+        Error::Crypto(Box::new(e))
     }
 }
 
@@ -570,8 +587,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-    use crate::ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey};
-
     use super::*;
 
     #[test]
@@ -589,8 +604,11 @@ mod tests {
         assert_eq!(iter.next(), None);
     }
 
+    #[cfg(feature = "openssl")]
     #[test]
     fn signing_and_verification() -> Result<()> {
+        use crate::ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey};
+
         let mut claims = HeaderAndClaims::new_dynamic();
         let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
         let k1 = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;

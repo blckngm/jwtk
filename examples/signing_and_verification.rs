@@ -1,11 +1,12 @@
-use jwtk::{
-    ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey, EcdsaPublicKey},
-    sign, verify, HeaderAndClaims,
-};
-use serde_json::{Map, Value};
-use std::time::Duration;
-
+#[cfg(feature = "openssl")]
 fn main() -> jwtk::Result<()> {
+    use jwtk::{
+        ecdsa::{EcdsaAlgorithm, EcdsaPrivateKey, EcdsaPublicKey},
+        sign, verify, HeaderAndClaims,
+    };
+    use serde_json::{Map, Value};
+    use std::time::Duration;
+
     let k = EcdsaPrivateKey::generate(EcdsaAlgorithm::ES256)?;
 
     let pem = k.public_key_to_pem()?;
@@ -25,4 +26,9 @@ fn main() -> jwtk::Result<()> {
     assert_eq!(verified.claims().extra["foo"], "bar");
 
     Ok(())
+}
+
+#[cfg(not(feature = "openssl"))]
+fn main() {
+    eprintln!("This example requires the 'openssl' feature");
 }

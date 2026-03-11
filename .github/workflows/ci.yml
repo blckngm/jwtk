@@ -7,30 +7,46 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "rsa"
+          - "openssl"
+          - "rsa,openssl"
+          - "rsa,remote-jwks"
+          - "openssl,remote-jwks"
+          - "rsa,openssl,remote-jwks"
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: 1.85.0
-        default: true
-        profile: minimal
         components: rustfmt, clippy
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        profile: minimal
+    - name: cargo test (features=${{ matrix.features || 'none' }})
+      env:
+        RUSTFLAGS: -D warnings
+      run: cargo test --no-default-features --features "${{ matrix.features }}"
 
+    - name: cargo clippy (features=${{ matrix.features || 'none' }})
+      run: cargo clippy --no-default-features --features "${{ matrix.features }}" -- -D clippy::all
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: 1.85.0
+        components: rustfmt
     - name: cargo fmt
       run: cargo fmt -- --check
 
-    - name: cargo test --benches
-      run: cargo +nightly test --benches && rm -r benches
-
-    - name: cargo test
-      env:
-        RUSTFLAGS: -D warnings
-      run: cargo test --all-targets
-
-    - name: cargo clippy
-      run: cargo clippy --all-targets -- -D clippy::all && cargo clippy --no-default-features --all-targets -- -D clippy::all
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: cargo test --benches (openssl)
+      run: cargo +nightly test --no-default-features --features openssl --benches
